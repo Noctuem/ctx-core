@@ -19,6 +19,11 @@
   import to the `ctx` console script now that the CLI exists [2026-08-18]
 - [ ] `yield-bridge`: consider emitting an eventlog line per composition run
   (design note in build records) [2026-08-18]
+- [ ] Claim-guard limit: Bash-issued writes are unguarded (named limit in
+  .claude/hooks/README.md); revisit if a reliable path signal appears
+  [2026-08-18]
+- [ ] Intake completion interview (file-and-track shipped; completion prompts
+  deferred — revisit if filing-without-completing dominates) [2026-08-18]
 
 ## Low
 
@@ -28,6 +33,9 @@
 
 ## Done
 
+- [x] v0.2.0 built: sessions board (m11), intake + layers (m12), stats
+  pipeline (m13), wiring/doctor/guard/analyze skill (m14) + gap-closure fix;
+  324 tests [2026-08-18]
 - [x] v0.1.0 built end-to-end: all 10 spec modules + CI workflow +
   port-fidelity fix pass + corrupt-log hard-fail fix [2026-08-18]
 - [x] m1 scaffold — template corpus layout (`Layout`, `Knobs`, `template/`
