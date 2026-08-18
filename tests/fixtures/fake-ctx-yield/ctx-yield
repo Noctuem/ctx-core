@@ -1,0 +1,11 @@
+#!/bin/sh
+# POSIX shim for the fake `ctx-yield` binary used by test_yield_bridge.py.
+# `shutil.which` on POSIX matches this file by its exact (extensionless)
+# name, same as a real installed console-script entry point.
+DIR="$(cd "$(dirname "$0")" && pwd)"
+if command -v python3 >/dev/null 2>&1; then
+  PY=python3
+else
+  PY=python
+fi
+exec "$PY" "$DIR/fake_ctx_yield.py" "$@"
