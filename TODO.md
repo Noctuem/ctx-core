@@ -2,6 +2,10 @@
 
 ## High
 
+- [ ] [human] Run `git push --force-with-lease origin main` once — local
+  history is amended to purge an internal marker string from the pushed tip
+  commit; local `main` is the clean canonical state (a deny rule blocks the
+  session from pushing it) [2026-08-18]
 - [ ] Publish `ctx-core` 0.1.0 to PyPI (maintainer action; README quick-start
   upgrades to `pip install ctx-core` after) [2026-08-18]
 - [ ] Live composition check with a real installed `ctx-yield` (stub-tested
