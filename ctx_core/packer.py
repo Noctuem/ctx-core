@@ -26,6 +26,7 @@ from typing import Sequence
 from .config import Knobs
 from .events import EventKind, EventLog, default_eventlog_path
 from .indexing import Entry, build_index, _terms
+from .intake import intake_list
 from .layout import Layout
 
 # ==========================================================================
@@ -334,6 +335,15 @@ def pack(
     - `decisions` admits every entry that looks like a decision record
       (see `_is_decision_entry`) off the top, on the same terms.
 
+    Independently of these CLI-driven flags, an always-on admission
+    modifier surfaces every unrouted New-layer note (`notes/intake/`,
+    `ctx:layer: new` — `intake.py`'s vocabulary, read via `intake_list`
+    rather than restated here) whose size is within
+    `knobs.intake_always_include_max_tokens`, the same way a pinned note
+    is admitted; an over-cap intake note is dropped outright with a reason
+    naming that cap, rather than falling back into the ranked pool. See
+    the admission block below.
+
     `event_log`, if given, is used in place of the default
     `EventLog(default_eventlog_path(layout.root, knobs.eventlog_path))` —
     this keeps the event emission path-configurable so a test can point it
@@ -391,8 +401,43 @@ def pack(
         if e.always_include and e.tokens <= ALWAYS_INCLUDE_MAX_TOKENS:
             e.pinned = True
 
+    # --- intake admission modifier: unrouted New-layer items under cap ---
+    # (build spec Module 14 item 5) Every note still queued in
+    # `notes/intake/` is surfaced the same way a pinned/always-include root
+    # file is: admitted before ranked candidates, budget still accounted.
+    # Reuses `intake.intake_list` itself rather than re-deriving the
+    # `notes/intake/` + `ctx:layer: new` classification here, so that
+    # vocabulary stays owned by `intake.py`, the one seam (an absent
+    # `notes/intake/` changes nothing — `intake_list` already returns `[]`
+    # for it). This modifier's cap, `knobs.intake_always_include_max_tokens`,
+    # is deliberately separate from `ALWAYS_INCLUDE_MAX_TOKENS`: an over-cap
+    # intake item is DROPPED here, with a reason naming the intake cap,
+    # rather than falling back into the ranked pool the way an over-cap
+    # named/pinned entry does. An entry already claimed by another
+    # admission route (pinned, or already `always_include` from
+    # named/decisions/last above) is left to that route rather than
+    # reconsidered here.
+    intake_queue = {item.path for item in intake_list(layout)}
+    intake_cap = int(knobs.intake_always_include_max_tokens)
+    intake_dropped: list[tuple[Entry, str]] = []
+    for e in entries:
+        if e.path not in intake_queue or e.pinned or e.always_include:
+            continue
+        if e.tokens <= intake_cap:
+            e.always_include = True
+            e.pinned = True
+        else:
+            intake_dropped.append(
+                (
+                    e,
+                    f"unrouted intake item over the {intake_cap:,}-token "
+                    "intake-always-include cap; read it directly",
+                )
+            )
+    intake_dropped_ids = {id(e) for e, _ in intake_dropped}
+
     pinned = [e for e in entries if e.pinned]
-    pool = [e for e in entries if not e.pinned]
+    pool = [e for e in entries if not e.pinned and id(e) not in intake_dropped_ids]
 
     # Soft staleness filter — never applied to a high-relevance match.
     pool = [e for e in pool if e.age_days <= MAX_ITEM_AGE_DAYS or e.relevance >= AGE_GATE_RELEVANCE_EXEMPT]
@@ -418,7 +463,7 @@ def pack(
             "— no ranking could pack it",
         )
         for e in oversized
-    ]
+    ] + intake_dropped
     total = sum(e.tokens for e in chosen)
     accounted = {id(e) for e in chosen} | {id(d) for d, _ in dropped}
 

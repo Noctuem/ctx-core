@@ -484,6 +484,91 @@ def test_age_gate_exempts_high_relevance_stale_note(tmp_path: Path, monkeypatch:
     assert any(e.path == "notes/ancient-relevant.md" for e in manifest.entries)
 
 
+def test_intake_item_under_cap_is_admitted_regardless_of_task(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An unrouted intake note is surfaced in every pack when it fits under
+    `knobs.intake_always_include_max_tokens` -- admitted the same way an
+    always-include root file is, even though the task text has nothing to
+    do with its content."""
+    _freeze_time(monkeypatch)
+    layout = Layout(tmp_path)
+    _write(
+        layout.notes / "intake" / "2023-11-01-a-fresh-idea.md",
+        "---\nctx:layer: new\nctx:source: user\nctx:received: 2023-11-01T00:00:00+00:00\n---\n"
+        "# A fresh idea\n\nCompletely unrelated to gardening or any task string.\n",
+    )
+    _age(layout.notes / "intake" / "2023-11-01-a-fresh-idea.md", 1)
+    knobs = Knobs(pack_budget_tokens=8000, intake_always_include_max_tokens=2000)
+
+    manifest = pack(
+        "totally unrelated task about something else entirely",
+        layout,
+        knobs,
+        event_log=EventLog(tmp_path / "events.jsonl"),
+    )
+
+    entry = next(
+        e for e in manifest.entries if e.path == "notes/intake/2023-11-01-a-fresh-idea.md"
+    )
+    assert entry.pinned is True
+    assert entry.always_include is True
+
+
+def test_intake_item_over_cap_is_dropped_with_distinct_reason(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An unrouted intake note bigger than the intake cap is dropped
+    outright (never falls back into the ranked pool), with a drop reason
+    that names the intake cap specifically -- distinct from the general
+    always-include-over-cap wording."""
+    _freeze_time(monkeypatch)
+    layout = Layout(tmp_path)
+    _write(
+        layout.notes / "intake" / "2023-11-01-big-idea.md",
+        "---\nctx:layer: new\nctx:source: user\nctx:received: 2023-11-01T00:00:00+00:00\n---\n"
+        "# Big idea\n\n" + ("word " * 100) + "\n",
+    )
+    _age(layout.notes / "intake" / "2023-11-01-big-idea.md", 1)
+    knobs = Knobs(pack_budget_tokens=8000, intake_always_include_max_tokens=10)
+
+    manifest = pack(
+        "totally unrelated task about something else entirely",
+        layout,
+        knobs,
+        event_log=EventLog(tmp_path / "events.jsonl"),
+    )
+
+    assert not any(e.path == "notes/intake/2023-11-01-big-idea.md" for e in manifest.entries)
+    reason = dict((e.path, r) for e, r in manifest.dropped)["notes/intake/2023-11-01-big-idea.md"]
+    assert "intake-always-include cap" in reason
+    assert "10" in reason
+
+
+def test_no_intake_dir_is_identical_to_no_modifier(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An absent `notes/intake/` changes nothing about an ordinary pack --
+    same shape of run as any corpus with no intake queue at all."""
+    _freeze_time(monkeypatch)
+    layout = Layout(tmp_path)
+    _write(layout.notes / "ordinary.md", "# Ordinary\n\nNothing intake-related here.\n")
+    _age(layout.notes / "ordinary.md", 1)
+    knobs = Knobs(pack_budget_tokens=8000)
+
+    assert not (layout.notes / "intake").exists()
+
+    manifest = pack(
+        "totally unrelated task string",
+        layout,
+        knobs,
+        event_log=EventLog(tmp_path / "events.jsonl"),
+    )
+
+    entry = next(e for e in manifest.entries if e.path == "notes/ordinary.md")
+    assert entry.pinned is False
+
+
 def test_pinned_entry_over_cap_falls_back_to_ordinary_pool(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
