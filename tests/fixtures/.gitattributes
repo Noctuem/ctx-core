@@ -1,0 +1,11 @@
+# Frozen fixture corpora and golden files under this directory are compared
+# byte-for-byte by the test suite (see test_packer.py's fixture-based
+# manifest proof). Without this, a checkout with `core.autocrlf=true` (the
+# common Windows default) silently rewrites LF to CRLF on clone, changing
+# every file's exact byte length and breaking token-count/manifest
+# reproducibility for anyone but the machine that authored them.
+#
+# `-text` disables Git's newline normalization entirely for everything
+# below this directory, so a fixture checks out identical to what was
+# committed on every platform.
+* -text
