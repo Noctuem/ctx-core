@@ -21,3 +21,7 @@ htmlcov/
 
 # Build coordination
 _build/
+
+# Local build machinery (never published; .claude/skills|hooks|commands stay tracked)
+.claude/roster.md
+.claude/agents/
