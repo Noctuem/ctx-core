@@ -38,7 +38,7 @@ from datetime import datetime
 
 from .archive import SOURCES_KEY, archived_path_for_handle
 from .config import Knobs
-from .events import EventKind, EventLog, default_eventlog_path
+from .events import EventKind, EventLog, EventLogCorruptError, default_eventlog_path
 from .indexing import FRONT_MATTER, Entry, build_index
 from .layout import Layout
 
@@ -283,15 +283,26 @@ def doctor(layout: Layout, knobs: Knobs, *, event_log: EventLog | None = None) -
 
     report = DoctorReport(hard_failures=hard_failures, warnings=warnings)
 
-    log.append(
-        EventKind.DOCTOR_RUN,
-        {
-            "ok": report.ok,
-            "n_hard_failures": len(hard_failures),
-            "n_warnings": len(warnings),
-            "hard_failures": hard_failures,
-            "warnings": warnings,
-        },
-    )
+    # The DOCTOR_RUN emission below is best-effort reporting on top of an
+    # already-computed report, never a precondition for one -- a corrupt
+    # log tail (already named in hard_failures by `_check_eventlog_chain`
+    # above) must not turn a clean report into a crash. `EventLog.append`
+    # raises `EventLogCorruptError` rather than repairing/extending a
+    # broken chain, so catch exactly that and downgrade to a warning.
+    try:
+        log.append(
+            EventKind.DOCTOR_RUN,
+            {
+                "ok": report.ok,
+                "n_hard_failures": len(hard_failures),
+                "n_warnings": len(warnings),
+                "hard_failures": hard_failures,
+                "warnings": warnings,
+            },
+        )
+    except EventLogCorruptError as exc:
+        report.warnings.append(
+            f"DOCTOR_RUN event emission skipped: {exc}"
+        )
 
     return report

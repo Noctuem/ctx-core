@@ -68,6 +68,17 @@ LOCK_REGION_BYTES = 1
 _CANONICAL_SEPARATORS = (",", ":")
 
 
+class EventLogCorruptError(ValueError):
+    """Raised by `EventLog.append` when the log's tail line is not a
+    well-formed chain record -- undecodable JSON, not a JSON object, or
+    missing the `"seq"` field `append` needs to compute the next sequence
+    number. `verify()` already detects and reports this class of damage as
+    `(False, i)`; this exception is what stops `append` from either
+    crashing on a bare `JSONDecodeError`/`KeyError` or, worse, silently
+    "repairing" a broken chain by extending it as if the tail were sound.
+    """
+
+
 class EventKind(str, Enum):
     """Well-known event kinds. Any other string is also a valid `kind` --
     this is the minimum vocabulary dependents are guaranteed to find.
@@ -245,7 +256,18 @@ class EventLog:
             lines = _read_raw_lines(self.path)
             if lines:
                 prev_hash = _hash_line(lines[-1])
-                seq = json.loads(lines[-1])["seq"] + 1
+                try:
+                    tail_record = json.loads(lines[-1])
+                except json.JSONDecodeError as exc:
+                    raise EventLogCorruptError(
+                        f"cannot append to {self.path}: tail line is not valid JSON ({exc})"
+                    ) from exc
+                if not isinstance(tail_record, dict) or "seq" not in tail_record:
+                    raise EventLogCorruptError(
+                        f"cannot append to {self.path}: tail line is missing the "
+                        f"\"seq\" field required to chain from it"
+                    )
+                seq = tail_record["seq"] + 1
             else:
                 prev_hash = GENESIS_HASH
                 seq = 0

@@ -25,6 +25,9 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
+import subprocess
+import sys
 from datetime import datetime
 from pathlib import Path
 
@@ -34,6 +37,9 @@ from ctx_core.doctor import DoctorReport, doctor
 from ctx_core.events import EventKind, EventLog
 from ctx_core.layout import PROFILE_PLACEHOLDER, Layout
 from ctx_core.packer import pack
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+TEMPLATE_DIR = REPO_ROOT / "template"
 
 
 def _write(path: Path, text: str) -> None:
@@ -124,6 +130,85 @@ def test_doctor_corrupted_eventlog_is_hard_failure(tmp_path: Path) -> None:
 
     assert report.ok is False
     assert any("event log chain broken at line 0" in f and str(log.path) in f for f in report.hard_failures)
+
+
+def test_doctor_garbage_tail_returns_clean_report(tmp_path: Path) -> None:
+    """The live repro: a log whose TAIL line is garbage (undecodable JSON,
+    or valid JSON missing `"seq"`) used to crash `doctor()` with an
+    unhandled `KeyError`/`JSONDecodeError` out of `EventLog.append`'s
+    unconditional `DOCTOR_RUN` emission -- the existing corruption tests
+    above only tamper with hash-covered FIELDS (still valid, seq-bearing
+    JSON), which never exercised this path. `doctor()` must instead return
+    a normal, clean `DoctorReport`: ok False, the chain break named among
+    hard_failures (from `_check_eventlog_chain`/`verify()`, unchanged), and
+    the `DOCTOR_RUN` emission itself downgraded to a warning rather than
+    raising.
+    """
+    layout = Layout(tmp_path)
+    _write(layout.core / "profile.md", "Fine.")
+    log = EventLog(tmp_path / "events.jsonl")
+    log.append("some_event", {"a": 1})
+
+    with open(log.path, "a", encoding="utf-8", newline="") as f:
+        f.write('{"garbage":"tamper"}\n')  # valid JSON, no "seq" -> append() would crash
+
+    report = doctor(layout, Knobs(), event_log=log)  # must not raise
+
+    assert isinstance(report, DoctorReport)
+    assert report.ok is False
+    assert any("event log chain broken at line 1" in f for f in report.hard_failures)
+    assert any("DOCTOR_RUN event emission skipped" in w for w in report.warnings)
+
+
+def test_doctor_subprocess_garbage_tail_exits_1_no_traceback(tmp_path: Path) -> None:
+    """Drives the REAL `ctx doctor` entry point (not the in-process
+    `doctor()` call) against the exact live-repro sequence: build a corpus
+    from `template/`, run `ctx pack` once (creates `var/log/events.jsonl`
+    with one event), tamper the tail with a garbage line outside the
+    append path, then run `ctx doctor`. Before this fix that crashed with
+    an unhandled traceback at exit code 1; the requirement is exit code 1
+    with a clean report and NO traceback on stderr -- unit tests calling
+    `doctor()` directly cannot prove the shipped CLI entry point behaves,
+    only a subprocess drive of the real command can (me-code.md: "verify
+    the real entry point").
+    """
+    root = tmp_path / "corpus"
+    shutil.copytree(TEMPLATE_DIR, root)
+
+    env = dict(os.environ)
+    env["PYTHONPATH"] = str(REPO_ROOT) + os.pathsep + env.get("PYTHONPATH", "")
+
+    pack_result = subprocess.run(
+        [sys.executable, "-m", "ctx_core.cli", "pack", "x", "--root", str(root)],
+        cwd=str(REPO_ROOT),
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    assert pack_result.returncode == 0, pack_result.stderr
+
+    log_path = root / "var" / "log" / "events.jsonl"
+    assert log_path.is_file()
+    lines_before = [l for l in log_path.read_text(encoding="utf-8").split("\n") if l]
+    assert len(lines_before) == 1
+
+    with open(log_path, "a", encoding="utf-8", newline="") as f:
+        f.write('{"garbage":"tamper"}\n')
+
+    doctor_result = subprocess.run(
+        [sys.executable, "-m", "ctx_core.cli", "doctor", "--root", str(root)],
+        cwd=str(REPO_ROOT),
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+
+    assert doctor_result.returncode == 1
+    assert "Traceback" not in doctor_result.stderr
+    assert "Traceback" not in doctor_result.stdout
+    assert "ctx doctor: FAILED" in doctor_result.stdout
 
 
 def test_doctor_missing_eventlog_verifies_trivially(tmp_path: Path) -> None:

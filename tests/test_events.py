@@ -15,7 +15,14 @@ from pathlib import Path
 
 import pytest
 
-from ctx_core.events import EventKind, EventLog, GENESIS_HASH, _hash_line, _hash_record
+from ctx_core.events import (
+    EventKind,
+    EventLog,
+    EventLogCorruptError,
+    GENESIS_HASH,
+    _hash_line,
+    _hash_record,
+)
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
@@ -122,6 +129,49 @@ def test_append_rejects_bad_args(tmp_path: Path) -> None:
         log.append("", {"i": 0})
     with pytest.raises(TypeError):
         log.append(EventKind.INIT_RUN, ["not", "a", "dict"])  # type: ignore[arg-type]
+
+
+def test_append_on_undecodable_tail_raises_typed_error(tmp_path: Path) -> None:
+    """A tail line that isn't even valid JSON (e.g. a tampered/garbage line
+    appended outside `append()`) must raise `EventLogCorruptError`, never a
+    bare `json.JSONDecodeError` -- and must not extend the log as if the
+    tail were sound.
+    """
+    log = EventLog(tmp_path / "events.jsonl")
+    log.append(EventKind.INIT_RUN, {"i": 0})
+
+    with open(log.path, "a", encoding="utf-8", newline="") as f:
+        f.write('{"garbage":"tamper"\n')  # unbalanced -> not valid JSON
+
+    lines_before = log.path.read_text(encoding="utf-8").split("\n")
+    lines_before = [l for l in lines_before if l]
+
+    with pytest.raises(EventLogCorruptError) as exc_info:
+        log.append(EventKind.INIT_RUN, {"i": 1})
+
+    assert str(log.path) in str(exc_info.value)
+
+    lines_after = log.path.read_text(encoding="utf-8").split("\n")
+    lines_after = [l for l in lines_after if l]
+    assert lines_after == lines_before  # nothing was appended on the failed attempt
+
+
+def test_append_on_tail_missing_seq_raises_typed_error(tmp_path: Path) -> None:
+    """A tail line that IS valid JSON but lacks the `"seq"` field (e.g.
+    `{"garbage":"tamper"}` -- valid JSON, missing the chain field `append`
+    needs) must also raise `EventLogCorruptError`, not a bare `KeyError`.
+    """
+    log = EventLog(tmp_path / "events.jsonl")
+    log.append(EventKind.INIT_RUN, {"i": 0})
+
+    with open(log.path, "a", encoding="utf-8", newline="") as f:
+        f.write('{"garbage":"tamper"}\n')
+
+    with pytest.raises(EventLogCorruptError) as exc_info:
+        log.append(EventKind.INIT_RUN, {"i": 1})
+
+    assert str(log.path) in str(exc_info.value)
+    assert "seq" in str(exc_info.value)
 
 
 def test_concurrent_appends_never_interleave(tmp_path: Path) -> None:
