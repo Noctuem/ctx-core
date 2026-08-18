@@ -189,8 +189,17 @@ DATA_SUFFIXES = {".json", ".jsonl", ".ndjson", ".csv", ".tsv"}
 # a large machine-generated blob (an exported log, a big fixture dump) is
 # neither prose nor something a working set can hold, and `packer.py`'s
 # fresh-bulk discount and age gate should not exempt it the way it exempts
-# small, load-bearing config.
-DATA_BLOB_MIN_TOKENS = 2_000
+# small, load-bearing config. Tuned default, set to match the fresh-bulk
+# discount's own size threshold: a data file too small to be discounted has
+# nothing to gain from being reclassified.
+#
+# CURRENT LIMIT: `build_index` only walks `*.md` files (see below), so no
+# DATA_SUFFIXES file is ever indexed yet and `classify_is_data` is presently
+# unreachable from a real pack — it is exercised directly by tests and
+# wired in ahead of the tree walk gaining non-.md suffixes, which is the
+# upgrade path: widen the `rglob` pattern (or add a second scoped walk) and
+# this classification starts taking effect with no change needed here.
+DATA_BLOB_MIN_TOKENS = 4_000
 
 
 def classify_is_data(rel: str, tokens: int, data_blob_min_tokens: int = DATA_BLOB_MIN_TOKENS) -> bool:
