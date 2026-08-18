@@ -1,0 +1,50 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ctx-core"
+dynamic = ["version"]
+description = "A git-native, human-readable context system for Claude Code: packs the right context per task under a token budget, monitors its own health, and manages context lifecycle without losing anything."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "Noctuem" }]
+keywords = ["claude-code", "context", "agents", "cli"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+# Stdlib-only by design -- see README's "five gaps" table for why this
+# module set exists instead of a dependency on something bigger.
+dependencies = []
+
+[project.optional-dependencies]
+dev = ["pytest>=8"]
+
+[project.urls]
+Homepage = "https://github.com/Noctuem/ctx-core"
+Repository = "https://github.com/Noctuem/ctx-core"
+Issues = "https://github.com/Noctuem/ctx-core/issues"
+
+[project.scripts]
+# The console-script name claims the short verb; the PyPI package name
+# does not -- see the README's "package vs. command name" note for why.
+ctx = "ctx_core.cli:main"
+
+[tool.setuptools]
+packages = ["ctx_core"]
+
+[tool.setuptools.dynamic]
+version = { attr = "ctx_core.__version__" }
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
