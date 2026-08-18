@@ -85,11 +85,46 @@ ctx archive sweep
 ctx archive stub <path>
 ctx init [--answers FILE]
 ctx domains list | register <name> <path> | forget <name>
+ctx sessions list | claim <session-id> <path>... [--intent TEXT] | release <session-id>
+ctx intake add "<text>" [--source user|project|research] [--title T]
+ctx intake route <item> --to core|notes[/<subpath>]|archive
+ctx intake list
+ctx stats [--since N]
 ctx --version
 ```
 
 Every command takes `--root PATH` to point at a corpus other than the current
 directory (default: cwd). Run `ctx <command> --help` for the full flag list.
+
+## Sessions, intake, stats
+
+Three additions on top of the three-layer model above, all governed by the same
+semi-automatic posture: machinery gathers, aggregates, and flags automatically —
+it never applies anything on its own.
+
+- **Sessions** (`ctx sessions`) — a live-session board, one JSON file per session
+  under `var/sessions/live/`, so concurrent work on one corpus is coordinated by
+  construction rather than convention. `ctx sessions claim` registers a session (if
+  it isn't already) and records what paths it's touching; a stale session (past
+  `session_stale_seconds`, crashed or otherwise abandoned) stops blocking on its
+  own and its claim is swept to `var/sessions/history/` — nothing is ever deleted.
+  The plugin layer wires this in automatically: a `SessionStart` hook registers and
+  shows who else is active, and a `PreToolUse` guard hook blocks a write into
+  another live session's claim (fail-open — a broken guard never bricks a session).
+- **Intake** (`ctx intake`) — the missing fourth lifecycle stage: **New**. Context
+  that just arrived (`ctx intake add`) is filed under `notes/intake/` with
+  provenance (`user`/`project`/`research`) and a received timestamp, until a
+  session or a human routes it (`ctx intake route`) into `core/`, `notes/`, or the
+  archive. `ctx doctor` makes an unrouted item visible immediately and a hard
+  failure once it's sat past `intake_max_age_days` — filing something is never a
+  silent leak.
+- **Stats** (`ctx stats`) — the zero-token half of the Statistics Mentality: a
+  deterministic fold over the event log, the corpus index, sessions, and intake
+  into `var/stats/summary.md`/`summary.json` — what gets packed, what never does,
+  why things get dropped, budget utilization, doctor pass rate, intake latency,
+  session activity, and ctx-yield dead weight when it's installed. No LLM call
+  anywhere in gathering or aggregation; the `ctx-analyze` skill is the one place
+  that spends tokens, and it reads only these products, never the raw event log.
 
 ## Package name vs. command name
 
@@ -149,8 +184,15 @@ python -m pytest                       # full suite -- the merge gate
 Version 0.1.0 shipped 2026-08-18 — all ten modules (layout/config, packer+indexer,
 doctor, archive, event log, yield-bridge, init, plugin layer, domains, CLI) are built
 and tested, with 203 tests passing in a CI matrix across Linux and Windows on Python
-3.11 and 3.13. PyPI publication and the plugin-marketplace listing (see
-`docs/ADOPTION.md` for the checklist) are the next iteration targets.
+3.11 and 3.13.
+
+Version 0.2.0 adds the live-session board (`ctx sessions`), the New-layer intake
+front door (`ctx intake`), and the zero-token stats pipeline (`ctx stats` + the
+`ctx-analyze` skill), plus three new `ctx doctor` checks and two new plugin hooks
+(a `SessionStart` board hook and a fail-open `PreToolUse` claim guard) — 321 tests
+passing locally, both suite tiers. PyPI publication and the plugin-marketplace
+listing (see `docs/ADOPTION.md` for the checklist) are still the next iteration
+targets.
 
 ## License
 

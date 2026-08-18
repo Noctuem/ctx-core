@@ -19,6 +19,10 @@ Covers:
   contributing files; under budget -> no failure.
 - `DoctorReport.ok` reflects `hard_failures` by construction; `DOCTOR_RUN`
   event emission, including the injectable `event_log` pattern.
+- v0.2 additions (m14): unrouted-New intake check (soft always, hard past
+  `intake_max_age_days`), stale-session-files advisory (soft), stats-product
+  staleness advisory (soft) -- each broken on purpose and watched go red
+  before the healthy/clean counterpart is asserted.
 """
 
 from __future__ import annotations
@@ -28,15 +32,18 @@ import os
 import shutil
 import subprocess
 import sys
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from ctx_core.archive import HANDLE_PREFIX, archive_note
 from ctx_core.config import Knobs
 from ctx_core.doctor import DoctorReport, doctor
 from ctx_core.events import EventKind, EventLog
+from ctx_core.intake import intake_add
 from ctx_core.layout import PROFILE_PLACEHOLDER, Layout
 from ctx_core.packer import pack
+from ctx_core.sessions import SessionBoard
+from ctx_core.stats import compute_stats, write_products
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 TEMPLATE_DIR = REPO_ROOT / "template"
@@ -385,3 +392,155 @@ def test_doctor_run_event_records_failures_and_warnings(tmp_path: Path) -> None:
     assert record["payload"]["n_warnings"] == len(report.warnings)
     assert record["payload"]["hard_failures"] == report.hard_failures
     assert record["payload"]["warnings"] == report.warnings
+
+
+# ==========================================================================
+# Unrouted-New check (v0.2, m14) -- soft always, hard past intake_max_age_days
+# ==========================================================================
+
+
+def test_doctor_unrouted_intake_item_is_soft_warning_only(tmp_path: Path) -> None:
+    layout = Layout(tmp_path)
+    intake_add(layout, "A fresh note that just arrived.", source="user")
+
+    report = doctor(layout, Knobs())
+
+    assert report.ok is True  # soft warning only, never a hard failure
+    assert any("unrouted intake item" in w for w in report.warnings)
+    assert not any("intake_max_age_days" in f for f in report.hard_failures)
+
+
+def test_doctor_no_intake_warning_when_notes_intake_absent(tmp_path: Path) -> None:
+    layout = Layout(tmp_path)
+    _write(layout.core / "profile.md", "Fine.")
+
+    report = doctor(layout, Knobs())
+
+    assert not any("unrouted intake item" in w for w in report.warnings)
+
+
+def test_doctor_intake_item_past_max_age_is_hard_failure(tmp_path: Path) -> None:
+    layout = Layout(tmp_path)
+    knobs = Knobs(intake_max_age_days=14)
+    old_received = datetime.now(timezone.utc) - timedelta(days=30)
+    intake_add(layout, "An old, forgotten note.", source="user", now=old_received)
+
+    report = doctor(layout, knobs)
+
+    assert report.ok is False
+    assert any(
+        "intake_max_age_days" in f and "unrouted past" in f for f in report.hard_failures
+    )
+    # Still carries the soft warning too -- escalation adds to, never replaces it.
+    assert any("unrouted intake item" in w for w in report.warnings)
+
+
+def test_doctor_intake_item_within_max_age_is_not_hard_failure(tmp_path: Path) -> None:
+    layout = Layout(tmp_path)
+    knobs = Knobs(intake_max_age_days=14)
+    recent = datetime.now(timezone.utc) - timedelta(days=1)
+    intake_add(layout, "A recent note.", source="user", now=recent)
+
+    report = doctor(layout, knobs)
+
+    assert report.ok is True
+    assert not any("intake_max_age_days" in f for f in report.hard_failures)
+
+
+# ==========================================================================
+# Stale-session-files advisory (v0.2, m14) -- soft only, never sweeps
+# ==========================================================================
+
+
+def test_doctor_stale_session_file_is_soft_warning(tmp_path: Path) -> None:
+    layout = Layout(tmp_path)
+    knobs = Knobs(session_stale_seconds=1800.0)
+    old_heartbeat = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
+    live_dir = layout.var / "sessions" / "live"
+    live_dir.mkdir(parents=True, exist_ok=True)
+    _write(
+        live_dir / "abc123.json",
+        json.dumps(
+            {
+                "session_id": "abc123",
+                "started_at": old_heartbeat,
+                "heartbeat_at": old_heartbeat,
+                "intent": "a stale build",
+                "claims": [],
+                "pid": 1,
+            }
+        ),
+    )
+
+    report = doctor(layout, knobs)
+
+    assert report.ok is True  # advisory only
+    assert any("abc123" in w and "session_stale_seconds" in w for w in report.warnings)
+    # Report-only: doctor() must not have swept the file to history.
+    assert (live_dir / "abc123.json").is_file()
+    assert not (layout.var / "sessions" / "history" / "abc123.json").exists()
+
+
+def test_doctor_no_stale_session_warning_for_fresh_heartbeat(tmp_path: Path) -> None:
+    layout = Layout(tmp_path)
+    board = SessionBoard(layout, event_log=EventLog(tmp_path / "events.jsonl"))
+    board.register("fresh1", "an active build")
+
+    report = doctor(layout, Knobs())
+
+    assert not any("session_stale_seconds" in w for w in report.warnings)
+
+
+def test_doctor_no_stale_session_warning_when_sessions_dir_absent(tmp_path: Path) -> None:
+    layout = Layout(tmp_path)
+    _write(layout.core / "profile.md", "Fine.")
+
+    report = doctor(layout, Knobs())
+
+    assert not any("session_stale_seconds" in w for w in report.warnings)
+
+
+# ==========================================================================
+# Stats-product staleness advisory (v0.2, m14) -- soft only
+# ==========================================================================
+
+
+def test_doctor_stale_stats_products_is_soft_warning(tmp_path: Path) -> None:
+    layout = Layout(tmp_path)
+    log = EventLog(tmp_path / "events.jsonl")
+
+    stats_dir = layout.var / "stats"
+    stats_dir.mkdir(parents=True, exist_ok=True)
+    old_generated = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
+    _write(
+        stats_dir / "summary.json",
+        json.dumps({"schema_version": 1, "generated_at": old_generated}),
+    )
+    log.append("some_event", {"a": 1})  # newer than the product's generated_at
+
+    report = doctor(layout, Knobs(), event_log=log)
+
+    assert report.ok is True  # advisory only
+    assert any("stats products" in w and "stale" in w for w in report.warnings)
+
+
+def test_doctor_no_staleness_warning_when_products_are_current(tmp_path: Path) -> None:
+    layout = Layout(tmp_path)
+    log = EventLog(tmp_path / "events.jsonl")
+    log.append("some_event", {"a": 1})
+
+    report = compute_stats(layout, Knobs())
+    write_products(report, layout)
+
+    result = doctor(layout, Knobs(), event_log=log)
+
+    assert not any("stats products" in w and "stale" in w for w in result.warnings)
+
+
+def test_doctor_no_staleness_warning_when_no_products_yet(tmp_path: Path) -> None:
+    layout = Layout(tmp_path)
+    _write(layout.core / "profile.md", "Fine.")
+
+    report = doctor(layout, Knobs())
+
+    assert not any("stats products" in w for w in report.warnings)

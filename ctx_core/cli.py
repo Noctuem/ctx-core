@@ -29,9 +29,15 @@ from ctx_core.domains import (
     DomainRegistry,
 )
 from ctx_core.init import run_interview
+from ctx_core.intake import DEFAULT_SOURCE, VALID_SOURCES
+from ctx_core.intake import intake_add as run_intake_add
+from ctx_core.intake import intake_list as run_intake_list
+from ctx_core.intake import intake_route as run_intake_route
 from ctx_core.layout import Layout
 from ctx_core.packer import Manifest
 from ctx_core.packer import pack as run_pack
+from ctx_core.sessions import SessionBoard, SessionNotFoundError
+from ctx_core.stats import compute_stats, write_products
 from ctx_core.yield_bridge import NOT_INSTALLED_HINT, dead_weight_map, yield_scan
 
 # --- named constants (no bare literals below) ---------------------------
@@ -207,6 +213,117 @@ def _cmd_domains_forget(args: argparse.Namespace) -> int:
     return EXIT_OK
 
 
+# --- sessions -------------------------------------------------------------
+
+
+def _session_board(layout: Layout, knobs: Knobs) -> SessionBoard:
+    return SessionBoard(
+        layout,
+        stale_seconds=knobs.session_stale_seconds,
+        heartbeat_seconds=knobs.session_heartbeat_seconds,
+    )
+
+
+def _cmd_sessions_list(args: argparse.Namespace) -> int:
+    layout = Layout(args.root)
+    knobs = Knobs.load(layout.root)
+    entries = _session_board(layout, knobs).list()
+    if not entries:
+        print("No sessions recorded.")
+        return EXIT_OK
+    for e in entries:
+        status = "just-expired" if e.stale else "live"
+        claims = ", ".join(e.claims) if e.claims else "(none)"
+        print(
+            f"{e.session_id}\t{status}\tage={e.age_seconds:.0f}s\t"
+            f"intent={e.intent!r}\tclaims={claims}"
+        )
+    return EXIT_OK
+
+
+def _cmd_sessions_claim(args: argparse.Namespace) -> int:
+    layout = Layout(args.root)
+    knobs = Knobs.load(layout.root)
+    board = _session_board(layout, knobs)
+    try:
+        board.claim(args.session_id, args.paths)
+    except SessionNotFoundError:
+        # `ctx sessions claim` is the CLI's only way to put a session on the
+        # board -- there is no separate `register` subcommand in the v0.2
+        # command surface (spec: `ctx sessions list|claim|release`), so an
+        # unknown session_id is registered here, using `--intent` if given,
+        # rather than making a manual claim a two-step operation.
+        board.register(args.session_id, args.intent)
+        board.claim(args.session_id, args.paths)
+    print(f"'{args.session_id}' claims: {', '.join(args.paths)}")
+    return EXIT_OK
+
+
+def _cmd_sessions_release(args: argparse.Namespace) -> int:
+    layout = Layout(args.root)
+    knobs = Knobs.load(layout.root)
+    board = _session_board(layout, knobs)
+    try:
+        board.release(args.session_id)
+    except SessionNotFoundError:
+        print(f"No live session named '{args.session_id}'.", file=sys.stderr)
+        return EXIT_ERROR
+    print(f"Released '{args.session_id}'.")
+    return EXIT_OK
+
+
+# --- intake -------------------------------------------------------------
+
+
+def _cmd_intake_add(args: argparse.Namespace) -> int:
+    layout = Layout(args.root)
+    path = run_intake_add(layout, args.text, source=args.source, title=args.title)
+    print(f"Filed -> {path}")
+    return EXIT_OK
+
+
+def _cmd_intake_route(args: argparse.Namespace) -> int:
+    layout = Layout(args.root)
+    try:
+        result = run_intake_route(layout, args.item, args.to)
+    except ValueError as exc:
+        print(f"Bad destination: {exc}", file=sys.stderr)
+        return EXIT_ERROR
+    except FileNotFoundError:
+        print(f"No such intake item: {args.item}", file=sys.stderr)
+        return EXIT_ERROR
+    print(f"Routed {args.item} -> {result}")
+    return EXIT_OK
+
+
+def _cmd_intake_list(args: argparse.Namespace) -> int:
+    layout = Layout(args.root)
+    items = run_intake_list(layout)
+    if not items:
+        print("No unrouted intake items.")
+        return EXIT_OK
+    for item in items:
+        print(
+            f"{item.path}\tsource={item.source}\tage={item.age_days:.1f}d\t"
+            f"title={item.title!r}"
+        )
+    return EXIT_OK
+
+
+# --- stats -------------------------------------------------------------
+
+
+def _cmd_stats(args: argparse.Namespace) -> int:
+    layout = Layout(args.root)
+    knobs = Knobs.load(layout.root)
+    since_days = args.since if args.since is not None else knobs.stats_window_days
+    report = compute_stats(layout, knobs, since_days=since_days)
+    paths = write_products(report, layout)
+    print(report.render_md(), end="")
+    print(f"Products written: {', '.join(str(p) for p in paths)}")
+    return EXIT_OK
+
+
 # --- parser -------------------------------------------------------------
 
 
@@ -317,6 +434,97 @@ def build_parser() -> argparse.ArgumentParser:
     forget_parser = domains_sub.add_parser("forget", help="Forget a registered domain.")
     forget_parser.add_argument("name")
     forget_parser.set_defaults(handler=_cmd_domains_forget)
+
+    # sessions
+    sessions_parser = subparsers.add_parser(
+        "sessions", help="Live-session board: who's active, what's claimed."
+    )
+    sessions_sub = sessions_parser.add_subparsers(dest="sessions_action", required=True)
+
+    sessions_list_parser = sessions_sub.add_parser(
+        "list", help="List live (and just-expired) sessions."
+    )
+    _add_root_option(sessions_list_parser)
+    sessions_list_parser.set_defaults(handler=_cmd_sessions_list)
+
+    sessions_claim_parser = sessions_sub.add_parser(
+        "claim", help="Claim one or more paths for a session (registers it if new)."
+    )
+    sessions_claim_parser.add_argument("session_id")
+    sessions_claim_parser.add_argument("paths", nargs="+", metavar="PATH")
+    sessions_claim_parser.add_argument(
+        "--intent",
+        default="",
+        help="Session intent -- only used if this session_id isn't already registered.",
+    )
+    _add_root_option(sessions_claim_parser)
+    sessions_claim_parser.set_defaults(handler=_cmd_sessions_claim)
+
+    sessions_release_parser = sessions_sub.add_parser(
+        "release", help="End a session gracefully -- moves its board file to history."
+    )
+    sessions_release_parser.add_argument("session_id")
+    _add_root_option(sessions_release_parser)
+    sessions_release_parser.set_defaults(handler=_cmd_sessions_release)
+
+    # intake
+    intake_parser = subparsers.add_parser(
+        "intake", help="New-layer front door: file, route, and list unrouted context."
+    )
+    intake_sub = intake_parser.add_subparsers(dest="intake_action", required=True)
+
+    intake_add_parser = intake_sub.add_parser("add", help="File a new-layer note.")
+    intake_add_parser.add_argument("text", help="The note's body text.")
+    intake_add_parser.add_argument(
+        "--source",
+        choices=sorted(VALID_SOURCES),
+        default=DEFAULT_SOURCE,
+        help="Provenance (default: user).",
+    )
+    intake_add_parser.add_argument(
+        "--title", default=None, help="Optional title (also seeds the filename slug)."
+    )
+    _add_root_option(intake_add_parser)
+    intake_add_parser.set_defaults(handler=_cmd_intake_add)
+
+    intake_route_parser = intake_sub.add_parser(
+        "route", help="Route an unrouted item into core, notes, or archive."
+    )
+    intake_route_parser.add_argument(
+        "item", help="Intake item path, relative to --root or absolute."
+    )
+    intake_route_parser.add_argument(
+        "--to",
+        required=True,
+        metavar="DEST",
+        help="Destination: core | notes | notes/<subpath> | archive.",
+    )
+    _add_root_option(intake_route_parser)
+    intake_route_parser.set_defaults(handler=_cmd_intake_route)
+
+    intake_list_parser = intake_sub.add_parser(
+        "list", help="List the unrouted intake queue, oldest first."
+    )
+    _add_root_option(intake_list_parser)
+    intake_list_parser.set_defaults(handler=_cmd_intake_list)
+
+    # stats
+    stats_parser = subparsers.add_parser(
+        "stats",
+        help=(
+            "Zero-token aggregation: packs, drops, budget, doctor pass rate, "
+            "intake latency, sessions, ctx-yield dead weight."
+        ),
+    )
+    stats_parser.add_argument(
+        "--since",
+        type=int,
+        default=None,
+        metavar="N",
+        help="Aggregation window in days (default: knobs.stats_window_days).",
+    )
+    _add_root_option(stats_parser)
+    stats_parser.set_defaults(handler=_cmd_stats)
 
     return parser
 

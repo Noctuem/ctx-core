@@ -1,8 +1,8 @@
 """doctor: single CI-gateable health-check gate over one ctx-core corpus.
 
-Five checks, three of them HARD (any one failing makes the whole run
-non-zero-exit-worthy; the CLI's exact exit-code wrapping is m10's job — this
-module only reports) and two SOFT (advisory, never fail the run):
+Eight checks (v0.2 added three): four HARD (any one failing makes the whole
+run non-zero-exit-worthy; the CLI's exact exit-code wrapping is m10's job —
+this module only reports) and four SOFT (advisory, never fail the run):
 
 - Corpus integrity (HARD): every note carrying a `sources:` front-matter
   handle (see `ctx_core.archive`'s stub format) must resolve to a live
@@ -22,6 +22,18 @@ module only reports) and two SOFT (advisory, never fail the run):
   `knobs.pack_budget_tokens`, using the exact same token estimate the packer
   uses (`indexing.build_index`'s `Entry.tokens`, itself `approx_tokens` —
   one seam, not reinvented here).
+- Unrouted-New check (SOFT always, escalating to HARD): every item still
+  sitting in `notes/intake/` (m12) is a warning the moment it exists --
+  visible, never a silent leak -- and becomes a hard failure once its
+  age-in-days passes `knobs.intake_max_age_days`.
+- Stale-session-files advisory (SOFT): a `var/sessions/live/*.json` file (m11)
+  whose heartbeat has already aged past `knobs.session_stale_seconds` but
+  hasn't been swept to history yet by any real `SessionBoard` call. Read-only
+  -- this check does NOT sweep (unlike `SessionBoard.list()`), matching
+  doctor's report-only contract.
+- Stats-product staleness advisory (SOFT): `var/stats/summary.json` (m13)
+  older than the most recent event already in the log -- products are cheap
+  to regenerate, so this is a nudge to run `ctx stats` again, never a defect.
 
 Every `doctor()` call emits exactly one `DOCTOR_RUN` event, the same
 injectable-event-log pattern `packer.pack` and `archive.archive_note` use —
@@ -33,6 +45,7 @@ from __future__ import annotations
 
 import json
 import re
+import time
 from dataclasses import dataclass, field
 from datetime import datetime
 
@@ -40,6 +53,7 @@ from .archive import SOURCES_KEY, archived_path_for_handle
 from .config import Knobs
 from .events import EventKind, EventLog, EventLogCorruptError, default_eventlog_path
 from .indexing import FRONT_MATTER, Entry, build_index
+from .intake import intake_list
 from .layout import Layout
 
 # ==========================================================================
@@ -257,14 +271,162 @@ def _check_l1_budget(entries: list[Entry], knobs: Knobs) -> list[str]:
 
 
 # ==========================================================================
+# Unrouted-New check (SOFT always, HARD past intake_max_age_days)
+# ==========================================================================
+
+
+def _check_unrouted_intake(layout: Layout, knobs: Knobs) -> tuple[list[str], list[str]]:
+    """New-layer front-door check (m12). Every unrouted item under
+    `notes/intake/` is a warning the moment it exists -- a visible defect-
+    in-waiting, never a silent leak -- and escalates to a HARD failure once
+    ANY item's age passes `knobs.intake_max_age_days`, per the build spec's
+    "warn immediately; hard fail past intake_max_age_days" rule.
+
+    Returns `(hard_failures, warnings)`. A missing `notes/intake/` (m12 not
+    in use, or nothing filed yet) reports neither -- absence is not a
+    defect, same posture every other advisory check here takes.
+    """
+    items = intake_list(layout)
+    if not items:
+        return [], []
+
+    oldest = items[0]  # intake_list() sorts oldest-received first
+    warnings = [
+        f"{len(items)} unrouted intake item(s) in notes/intake/ -- oldest "
+        f"{oldest.age_days:.1f}d old ({oldest.path}); route them with "
+        "`ctx intake route` or `ctx intake list` to see the full queue"
+    ]
+
+    overdue = [it for it in items if it.age_days > knobs.intake_max_age_days]
+    if not overdue:
+        return [], warnings
+
+    named = ", ".join(f"{it.path} ({it.age_days:.1f}d)" for it in overdue[:FRESHNESS_MAX_NAMED])
+    if len(overdue) > FRESHNESS_MAX_NAMED:
+        named += f" (+{len(overdue) - FRESHNESS_MAX_NAMED} more)"
+    hard_failures = [
+        f"{len(overdue)} intake item(s) unrouted past intake_max_age_days "
+        f"({knobs.intake_max_age_days}d): {named} -- route them with `ctx intake route`"
+    ]
+    return hard_failures, warnings
+
+
+# ==========================================================================
+# Stale-session-files advisory (SOFT)
+# ==========================================================================
+
+
+def _check_stale_sessions(layout: Layout, knobs: Knobs) -> list[str]:
+    """Advisory only. Reads `var/sessions/live/*.json` (m11) directly --
+    deliberately NOT through `SessionBoard`, whose own `list()`/`claim()`/
+    etc. sweep stale entries to history as a side effect (by design, per
+    m11's own docs); a report-only health check must never mutate the
+    corpus, so this re-implements the same heartbeat-age comparison
+    read-only rather than reusing `SessionBoard.list()`.
+    """
+    live_dir = layout.var / "sessions" / "live"
+    if not live_dir.is_dir():
+        return []
+
+    now = time.time()
+    stale_ids: list[str] = []
+    for path in sorted(live_dir.glob("*.json")):
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if not isinstance(data, dict):
+            continue
+        try:
+            age = now - datetime.fromisoformat(data.get("heartbeat_at", "")).timestamp()
+        except (TypeError, ValueError):
+            age = float("inf")  # missing/malformed heartbeat -- treat as stale
+        if age > knobs.session_stale_seconds:
+            stale_ids.append(str(data.get("session_id", path.stem)))
+
+    if not stale_ids:
+        return []
+    return [
+        f"{len(stale_ids)} session live-file(s) past session_stale_seconds "
+        f"({knobs.session_stale_seconds:.0f}s) and not yet swept to history: "
+        f"{', '.join(sorted(stale_ids))} -- clears on the next real sessions-board call"
+    ]
+
+
+# ==========================================================================
+# Stats-product staleness advisory (SOFT)
+# ==========================================================================
+
+
+def _last_event_ts(event_log: EventLog) -> float | None:
+    """Epoch timestamp of the most recent event of ANY kind in `event_log`.
+    Generalizes `_last_context_assembled_ts` above (which filters to one
+    kind) -- kept as a separate, small function rather than adding a `kind`
+    parameter to the existing one, so the freshness check's already-tested
+    behavior is untouched.
+    """
+    if not event_log.path.is_file():
+        return None
+    text = event_log.path.read_text(encoding="utf-8")
+    if not text:
+        return None
+    last_ts: float | None = None
+    for line in text.split("\n"):
+        if not line:
+            continue
+        try:
+            record = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(record, dict):
+            continue
+        try:
+            ts = datetime.fromisoformat(record["ts"]).timestamp()
+        except (KeyError, TypeError, ValueError):
+            continue
+        if last_ts is None or ts > last_ts:
+            last_ts = ts
+    return last_ts
+
+
+def _check_stats_staleness(layout: Layout, event_log: EventLog) -> list[str]:
+    """Advisory only. Compares `var/stats/summary.json`'s (m13) own
+    `generated_at` against the most recent event of any kind already in the
+    (same) event log -- "products are cheap, regenerate them" per the build
+    spec, never a defect. No products yet, or no events yet, is not warned
+    about -- nothing to compare against, same posture `_check_index_freshness`
+    takes for a corpus that has never been packed.
+    """
+    summary_path = layout.var / "stats" / "summary.json"
+    if not summary_path.is_file():
+        return []
+    try:
+        product = json.loads(summary_path.read_text(encoding="utf-8"))
+        generated_ts = datetime.fromisoformat(product["generated_at"]).timestamp()
+    except (OSError, json.JSONDecodeError, KeyError, TypeError, ValueError):
+        return []
+
+    last_event_ts = _last_event_ts(event_log)
+    if last_event_ts is None or last_event_ts <= generated_ts:
+        return []
+
+    age = last_event_ts - generated_ts
+    return [
+        f"stats products (var/stats/summary.md|json) are stale -- "
+        f"{age:.0f}s of newer event-log activity since they were last "
+        "generated; run `ctx stats` to refresh (cheap, zero tokens)"
+    ]
+
+
+# ==========================================================================
 # doctor()
 # ==========================================================================
 
 
 def doctor(layout: Layout, knobs: Knobs, *, event_log: EventLog | None = None) -> DoctorReport:
-    """Run all five checks once and report. `event_log`, if given, is used
+    """Run all eight checks once and report. `event_log`, if given, is used
     in place of the default `EventLog(default_eventlog_path(layout.root,
-    knobs.eventlog_path))` — same injectable pattern `packer.pack` and
+    knobs.eventlog_path))` -- same injectable pattern `packer.pack` and
     `archive.archive_note` use, so a test can point it at an isolated
     fixture log. The index is built exactly once and shared across every
     check that needs it, rather than each check re-walking the filesystem.
@@ -272,14 +434,20 @@ def doctor(layout: Layout, knobs: Knobs, *, event_log: EventLog | None = None) -
     entries, _census = build_index(layout)
     log = event_log if event_log is not None else EventLog(default_eventlog_path(layout.root, knobs.eventlog_path))
 
+    intake_hard, intake_warn = _check_unrouted_intake(layout, knobs)
+
     hard_failures: list[str] = []
     hard_failures += _check_corpus_integrity(layout, entries)
     hard_failures += _check_eventlog_chain(log)
     hard_failures += _check_l1_budget(entries, knobs)
+    hard_failures += intake_hard
 
     warnings: list[str] = []
     warnings += _check_index_freshness(entries, log)
     warnings += _check_template_state(layout)
+    warnings += intake_warn
+    warnings += _check_stale_sessions(layout, knobs)
+    warnings += _check_stats_staleness(layout, log)
 
     report = DoctorReport(hard_failures=hard_failures, warnings=warnings)
 

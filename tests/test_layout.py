@@ -125,6 +125,12 @@ def test_knobs_defaults_present_without_any_config(tmp_path: Path) -> None:
     assert knobs.eventlog_path == "var/log/"
     assert knobs.yield_exact is False
     assert knobs.yield_model is None
+    # v0.2 (m11 sessions / m12 intake / m13 stats) knobs, wired in m14.
+    assert knobs.session_stale_seconds == 1800.0
+    assert knobs.session_heartbeat_seconds == 120.0
+    assert knobs.intake_max_age_days == 14
+    assert knobs.intake_always_include_max_tokens == 2000
+    assert knobs.stats_window_days == 30
 
 
 def test_knobs_direct_construction_uses_defaults() -> None:
@@ -160,6 +166,22 @@ def test_knobs_load_ignores_unknown_toml_keys(tmp_path: Path) -> None:
 def test_knobs_load_with_no_ctxrc_file_uses_defaults(tmp_path: Path) -> None:
     knobs = Knobs.load(tmp_path)
     assert knobs.pack_budget_tokens == 8000
+
+
+def test_knobs_load_reads_v02_knobs_from_ctxrc_toml(tmp_path: Path) -> None:
+    (tmp_path / ".ctxrc.toml").write_text(
+        "session_stale_seconds = 60\n"
+        "intake_max_age_days = 3\n"
+        "stats_window_days = 7\n",
+        encoding="utf-8",
+    )
+    knobs = Knobs.load(tmp_path)
+    assert knobs.session_stale_seconds == 60
+    assert knobs.intake_max_age_days == 3
+    assert knobs.stats_window_days == 7
+    # Untouched v0.2 fields keep their defaults.
+    assert knobs.session_heartbeat_seconds == 120.0
+    assert knobs.intake_always_include_max_tokens == 2000
 
 
 # --- Knobs.load: override precedence (CLI flags win over file and default) ---

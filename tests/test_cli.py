@@ -291,6 +291,153 @@ def test_domains_forget_unknown_name_reports_error(
     assert "No domain named" in capsys.readouterr().err
 
 
+# --- sessions (v0.2, m14) -------------------------------------------------
+
+
+def test_sessions_claim_registers_a_new_session_and_lists_it(
+    tmp_path: Path, capsys: pytest.CaptureFixture
+) -> None:
+    root = _fresh_corpus(tmp_path)
+
+    claim_result = main(
+        [
+            "sessions",
+            "claim",
+            "sess-1",
+            "notes/composting",
+            "--intent",
+            "build the sessions module",
+            "--root",
+            str(root),
+        ]
+    )
+    assert claim_result == EXIT_OK
+    assert "notes/composting" in capsys.readouterr().out
+
+    list_result = main(["sessions", "list", "--root", str(root)])
+    assert list_result == EXIT_OK
+    out = capsys.readouterr().out
+    assert "sess-1" in out
+    assert "build the sessions module" in out
+
+
+def test_sessions_release_ends_a_claimed_session(
+    tmp_path: Path, capsys: pytest.CaptureFixture
+) -> None:
+    root = _fresh_corpus(tmp_path)
+    main(["sessions", "claim", "sess-2", "notes/x", "--root", str(root)])
+    capsys.readouterr()
+
+    result = main(["sessions", "release", "sess-2", "--root", str(root)])
+
+    assert result == EXIT_OK
+    assert "Released" in capsys.readouterr().out
+    assert (Layout(root).var / "sessions" / "history" / "sess-2.json").is_file()
+
+
+def test_sessions_release_unknown_session_reports_error(
+    tmp_path: Path, capsys: pytest.CaptureFixture
+) -> None:
+    root = _fresh_corpus(tmp_path)
+
+    result = main(["sessions", "release", "does-not-exist", "--root", str(root)])
+
+    assert result == EXIT_ERROR
+    assert "No live session" in capsys.readouterr().err
+
+
+# --- intake (v0.2, m14) ---------------------------------------------------
+
+
+def test_intake_add_files_a_new_layer_note(
+    tmp_path: Path, capsys: pytest.CaptureFixture
+) -> None:
+    root = _fresh_corpus(tmp_path)
+
+    result = main(
+        ["intake", "add", "A fresh idea worth filing.", "--source", "project", "--root", str(root)]
+    )
+
+    assert result == EXIT_OK
+    out = capsys.readouterr().out
+    assert "Filed" in out
+    assert (root / "notes" / "intake").is_dir()
+
+
+def test_intake_list_then_route_clears_the_queue(
+    tmp_path: Path, capsys: pytest.CaptureFixture
+) -> None:
+    root = _fresh_corpus(tmp_path)
+    main(["intake", "add", "Something new.", "--root", str(root)])
+    capsys.readouterr()
+
+    list_result = main(["intake", "list", "--root", str(root)])
+    assert list_result == EXIT_OK
+    out = capsys.readouterr().out
+    assert "something-new" in out or "source=user" in out
+
+    intake_dir = root / "notes" / "intake"
+    item_path = next(intake_dir.glob("*.md"))
+    rel_item = item_path.relative_to(root).as_posix()
+
+    route_result = main(["intake", "route", rel_item, "--to", "notes", "--root", str(root)])
+    assert route_result == EXIT_OK
+    assert "Routed" in capsys.readouterr().out
+
+    cleared_list = main(["intake", "list", "--root", str(root)])
+    assert cleared_list == EXIT_OK
+    assert "No unrouted intake items" in capsys.readouterr().out
+
+
+def test_intake_route_bad_destination_reports_error(
+    tmp_path: Path, capsys: pytest.CaptureFixture
+) -> None:
+    root = _fresh_corpus(tmp_path)
+    main(["intake", "add", "Something new.", "--root", str(root)])
+    capsys.readouterr()
+    intake_dir = root / "notes" / "intake"
+    item_path = next(intake_dir.glob("*.md"))
+    rel_item = item_path.relative_to(root).as_posix()
+
+    result = main(["intake", "route", rel_item, "--to", "nowhere", "--root", str(root)])
+
+    assert result == EXIT_ERROR
+    assert "Bad destination" in capsys.readouterr().err
+
+
+# --- stats (v0.2, m14) -----------------------------------------------------
+
+
+def test_stats_writes_products_and_prints_a_report(
+    tmp_path: Path, capsys: pytest.CaptureFixture
+) -> None:
+    root = _fresh_corpus(tmp_path)
+    _add_note(root, "notes/gardening.md", "Composting kitchen scraps efficiently.\n")
+    main(["pack", "compost", "--root", str(root)])
+    capsys.readouterr()
+
+    result = main(["stats", "--root", str(root)])
+
+    assert result == EXIT_OK
+    out = capsys.readouterr().out
+    assert "ctx-core stats" in out
+    assert "Products written" in out
+    assert (Layout(root).var / "stats" / "summary.md").is_file()
+    assert (Layout(root).var / "stats" / "summary.json").is_file()
+
+
+def test_stats_since_flag_overrides_the_knob_default(
+    tmp_path: Path, capsys: pytest.CaptureFixture
+) -> None:
+    root = _fresh_corpus(tmp_path)
+
+    result = main(["stats", "--since", "3", "--root", str(root)])
+
+    assert result == EXIT_OK
+    summary = json.loads((Layout(root).var / "stats" / "summary.json").read_text(encoding="utf-8"))
+    assert summary["window"]["since_days"] == 3
+
+
 # --- graceful interrupt -------------------------------------------------
 
 
@@ -385,6 +532,52 @@ def test_subprocess_domains_roundtrip(tmp_path: Path) -> None:
 
     forget_result = run_module_cli(["domains", "forget", "alpha"], env=env)
     assert forget_result.returncode == EXIT_OK
+
+
+@requires_subprocess
+def test_subprocess_sessions_claim_list_release(tmp_path: Path) -> None:
+    root = _fresh_corpus(tmp_path)
+
+    claim_result = run_module_cli(
+        ["sessions", "claim", "sub-sess-1", "notes/x", "--root", str(root)]
+    )
+    assert claim_result.returncode == EXIT_OK
+
+    list_result = run_module_cli(["sessions", "list", "--root", str(root)])
+    assert list_result.returncode == EXIT_OK
+    assert "sub-sess-1" in list_result.stdout
+
+    release_result = run_module_cli(["sessions", "release", "sub-sess-1", "--root", str(root)])
+    assert release_result.returncode == EXIT_OK
+    assert (Layout(root).var / "sessions" / "history" / "sub-sess-1.json").is_file()
+
+
+@requires_subprocess
+def test_subprocess_intake_add_list_route(tmp_path: Path) -> None:
+    root = _fresh_corpus(tmp_path)
+
+    add_result = run_module_cli(["intake", "add", "A subprocess-filed note.", "--root", str(root)])
+    assert add_result.returncode == EXIT_OK
+
+    list_result = run_module_cli(["intake", "list", "--root", str(root)])
+    assert list_result.returncode == EXIT_OK
+    assert "source=user" in list_result.stdout
+
+    item_path = next((root / "notes" / "intake").glob("*.md"))
+    rel_item = item_path.relative_to(root).as_posix()
+    route_result = run_module_cli(["intake", "route", rel_item, "--to", "notes", "--root", str(root)])
+    assert route_result.returncode == EXIT_OK
+
+
+@requires_subprocess
+def test_subprocess_stats_writes_products(tmp_path: Path) -> None:
+    root = _fresh_corpus(tmp_path)
+
+    result = run_module_cli(["stats", "--root", str(root)])
+
+    assert result.returncode == EXIT_OK
+    assert "ctx-core stats" in result.stdout
+    assert (Layout(root).var / "stats" / "summary.json").is_file()
 
 
 @requires_subprocess
