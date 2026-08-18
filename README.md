@@ -60,7 +60,8 @@ git clone https://github.com/Noctuem/ctx-core.git my-context
 cd my-context
 
 # 2. Install the engine
-pip install ctx-core
+# (PyPI package ctx-core coming; then: pip install ctx-core)
+pip install -e .
 
 # 3. Answer a short interview -- writes core/profile.md
 ctx init
@@ -145,9 +146,11 @@ python -m pytest                       # full suite -- the merge gate
 
 ## Status
 
-In build, module by module — see `TODO.md` for what's landed. `ctx pack`, `ctx doctor`,
-`ctx archive`, `ctx init`, and `ctx domains` are all wired and tested end to end as of
-this module; multi-domain workflows and the plugin marketplace listing are still early.
+Version 0.1.0 shipped 2026-08-18 — all ten modules (layout/config, packer+indexer,
+doctor, archive, event log, yield-bridge, init, plugin layer, domains, CLI) are built
+and tested, with 203 tests passing in a CI matrix across Linux and Windows on Python
+3.11 and 3.13. PyPI publication and the plugin-marketplace listing (see
+`docs/ADOPTION.md` for the checklist) are the next iteration targets.
 
 ## License
 

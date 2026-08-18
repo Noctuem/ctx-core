@@ -1,12 +1,15 @@
 # ctx-core — session handoff
 
-- **Spec:** maintained privately until modules land; this repo gains a public
-  spec pointer once the first module ships.
-- **Where we are:** repo scaffolded, pre-m1 — root files only, no code yet.
-- **Next:** module m1 `scaffold` per the build spec (template corpus layout:
-  `Layout`, `Knobs`, `template/` tree, `is_template_state`).
+- **Spec:** maintained privately; v0.1.0 implements it in full (all ten
+  modules).
+- **Where we are:** v0.1.0 shipped 2026-08-18 — engine + template + plugin
+  layer built, 203 tests, CI live.
+- **Next:** PyPI publish + marketplace listing (see TODO High/Medium); then
+  real-domain dogfooding.
 - **Guard (PUBLIC repo):** never commit the repo owner's personal name or
   absolute local paths; author identity is Noctuem. Grep staged changes before
   every push.
 - **Pointers:** `TODO.md` (backlog), `Session_Log.md` (append-only session
   record).
+
+<!-- upstream-reconciled: #17 2026-08-18 -->
