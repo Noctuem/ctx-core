@@ -29,6 +29,7 @@ Three things are exercised here, per the build spec:
 from __future__ import annotations
 
 import ast
+import base64
 import json
 import os
 import subprocess
@@ -43,8 +44,20 @@ HOOK_SCRIPT = CLAUDE_DIR / "hooks" / "ctx_eventlog_hook.py"
 
 # Terms that must never appear inside the tracked, public plugin surface
 # -- see the project CLAUDE.md guard ("never commit the repo owner's
-# personal name or absolute local paths").
-FORBIDDEN_SUBSTRINGS = ("caleb", "noctuem_vault", "\\users\\caleb", "/users/caleb")
+# personal name or absolute local paths"). Base64-encoded here so the
+# guarded literal never appears verbatim in this tracked file itself --
+# a leak-guard that spells out the thing it guards would defeat its own
+# purpose the moment this file is public. Decoded once at import time;
+# the check below still operates on the real substrings.
+_ENCODED_FORBIDDEN_SUBSTRINGS = (
+    "Y2FsZWI=",
+    "bm9jdHVlbV92YXVsdA==",
+    "XHVzZXJzXGNhbGVi",
+    "L3VzZXJzL2NhbGVi",
+)
+FORBIDDEN_SUBSTRINGS = tuple(
+    base64.b64decode(term).decode("ascii") for term in _ENCODED_FORBIDDEN_SUBSTRINGS
+)
 
 DIRECTIVE_PREFIXES = ("Use when", "Use this when")
 
@@ -231,8 +244,18 @@ def _make_corpus(root: Path) -> None:
 
 
 def _run_hook(payload: dict, *, cwd: Path, env: dict) -> subprocess.CompletedProcess:
+    # `-S` skips the interpreter's automatic `site` import -- which is what
+    # processes site-packages' `.pth` files, including the one an editable
+    # `pip install -e .` registers for ctx_core. Without it, an installed
+    # ctx-core is importable via site-packages regardless of PYTHONPATH, so
+    # the "engine not importable" test below could no longer simulate
+    # absence by stripping PYTHONPATH alone. `-S` leaves PYTHONPATH itself
+    # untouched (unlike `-I`, which also blanks it), so the "engine
+    # importable" test's `PYTHONPATH=REPO_ROOT` still works, and ctx-core
+    # has zero third-party dependencies (see pyproject.toml), so nothing
+    # the hook needs lives in site-packages to begin with.
     return subprocess.run(
-        [sys.executable, str(HOOK_SCRIPT)],
+        [sys.executable, "-S", str(HOOK_SCRIPT)],
         input=json.dumps(payload),
         capture_output=True,
         text=True,
