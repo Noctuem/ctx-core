@@ -29,8 +29,11 @@ from ctx_core.layout import Layout
 from ctx_core.packer import (
     ALWAYS_INCLUDE_MAX_TOKENS,
     MAX_ITEM_AGE_DAYS,
+    PATH_LITERAL_MIN_STEM,
+    PATH_LITERAL_WEIGHT,
     Manifest,
     _named_for_admission,
+    _named_literally,
     _term_overlap,
     pack,
 )
@@ -202,6 +205,54 @@ def test_bare_stem_without_extension_is_never_admitted(tmp_path: Path, monkeypat
     assert entry.pinned is False
 
 
+# ==========================================================================
+# Ranking-only stem boost (_named_literally / PATH_LITERAL_WEIGHT)
+# ==========================================================================
+
+
+def test_named_literally_matches_full_path_basename_and_bare_stem() -> None:
+    assert _named_literally({"notes/topic/note.md"}, "notes/topic/note.md") is True
+    assert _named_literally({"note.md"}, "notes/topic/note.md") is True
+    assert _named_literally({"note"}, "notes/topic/note.md") is True
+    assert _named_literally({"other"}, "notes/topic/note.md") is False
+
+
+def test_named_literally_short_stem_is_not_matched() -> None:
+    # "abc" is 3 chars, below PATH_LITERAL_MIN_STEM (4) -- ordinary English,
+    # not treated as a reference.
+    assert len("abc") < PATH_LITERAL_MIN_STEM
+    assert _named_literally({"abc"}, "notes/abc.md") is False
+
+
+def test_stem_named_in_task_boosts_relevance_but_is_not_pinned(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A task mentioning a note by its bare filename STEM (no extension)
+    boosts that note's relevance -- the complement to `_named_for_admission`,
+    which refuses the bare stem for admission. The boost applies on every
+    tier, including notes, and never promotes the entry to `pinned`."""
+    _freeze_time(monkeypatch)
+    layout = Layout(tmp_path)
+    _write(
+        layout.notes / "zucchini-guide.md",
+        "# Filler\n\nSomething entirely different: apples oranges grapefruit melons kiwis.\n",
+    )
+    _age(layout.notes / "zucchini-guide.md", 1)
+    knobs = Knobs(pack_budget_tokens=8000)
+
+    manifest = pack(
+        "tell me about the zucchini-guide approach please",
+        layout,
+        knobs,
+        event_log=EventLog(tmp_path / "events.jsonl"),
+    )
+
+    entry = next(e for e in manifest.entries if e.path == "notes/zucchini-guide.md")
+    # Zero term overlap with the task, so relevance is exactly the stem boost.
+    assert entry.relevance == pytest.approx(PATH_LITERAL_WEIGHT)
+    assert entry.pinned is False
+
+
 def test_decisions_flag_admits_tagged_note_at_zero_relevance(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -349,6 +400,28 @@ def test_oversized_entry_dropped_with_named_reason(tmp_path: Path, monkeypatch: 
     reason = dict((e.path, r) for e, r in manifest.dropped)["notes/huge.md"]
     assert "larger than the whole working budget" in reason
     assert not any(e.path == "notes/huge.md" for e in manifest.entries)
+
+
+def test_always_include_root_file_over_cap_gets_generic_drop_wording(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A root orientation file (TODO.md/Session_Log.md) dropped for size gets
+    its own wording, distinct from the named-in-task case above -- a reader
+    must not mistake it for an ordinary budget miss."""
+    _freeze_time(monkeypatch)
+    layout = Layout(tmp_path)
+    _write(layout.root / "TODO.md", "word " * 50_000)  # far over the always-include cap and the budget
+    _age(layout.root / "TODO.md", 1)
+    knobs = Knobs(pack_budget_tokens=5000)
+
+    manifest = pack(
+        "totally unrelated task string", layout, knobs, event_log=EventLog(tmp_path / "events.jsonl")
+    )
+
+    reason = dict((e.path, r) for e, r in manifest.dropped)["TODO.md"]
+    assert "always-include root file" in reason
+    assert "requested by name/flag" not in reason
+    assert not any(e.path == "TODO.md" for e in manifest.entries)
 
 
 def test_near_duplicate_entries_one_survives(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

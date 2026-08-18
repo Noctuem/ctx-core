@@ -39,22 +39,29 @@ from .layout import Layout
 # and `retrieval_decisions_default` come from there; everything below is the
 # packer's own internal tuning surface.
 
-#: Weight on term-overlap relevance in the final rank score.
-W_RELEVANCE = 0.7
+#: Weight on term-overlap relevance in the final rank score. Tuned default
+#: (carried from the reference implementation's measured tuning, not a
+#: guess) — the ratio between this and `W_RECENCY` controls admission order
+#: on real inputs, so the two are changed together or not at all.
+W_RELEVANCE = 1.0
 
-#: Weight on the recency term in the final rank score.
-W_RECENCY = 0.3
+#: Weight on the recency term in the final rank score. Tuned default — see
+#: `W_RELEVANCE`.
+W_RECENCY = 0.35
 
 #: A pinned / always-include / named-in-task entry is admitted off the top,
 #: but only up to this size — an unbounded pin list is a budget hole. Over
 #: the cap, the entry falls back into the ordinary ranked pool instead of
 #: being dropped outright, so a relevant one can still win a slot on merit.
-ALWAYS_INCLUDE_MAX_TOKENS = 4_000
+#: Tuned default: the smallest round value that admits the two root/
+#: named-file classes this rule exists for without also absorbing arbitrary
+#: bulk.
+ALWAYS_INCLUDE_MAX_TOKENS = 10_000
 
 #: Notes older than this (in days) are dropped from the ranked pool unless
 #: their relevance clears `AGE_GATE_RELEVANCE_EXEMPT` — a soft staleness
-#: filter, not a hard exclusion.
-MAX_ITEM_AGE_DAYS = 365
+#: filter, not a hard exclusion. Tuned default.
+MAX_ITEM_AGE_DAYS = 40
 
 #: Relevance at or above which the age gate above does not apply — a note
 #: that matches the task this well is not "stale bulk" no matter its age.
@@ -64,8 +71,10 @@ AGE_GATE_RELEVANCE_EXEMPT = 0.75
 #: "floor relevance" for the fresh-bulk discount below. Relative, never an
 #: absolute cutoff, because relevance (`overlap / len(query_terms)`) has a
 #: scale set by the task string itself: a task naming a file outright tops
-#: out much higher than a vaguely worded one.
-FRESH_BULK_MAX_RELEVANCE_FRAC = 0.30
+#: out much higher than a vaguely worded one. Tuned default: the value that
+#: protects a genuinely relevant large document scored against a vaguely
+#: worded task (a low top-relevance pack) from being misread as bulk.
+FRESH_BULK_MAX_RELEVANCE_FRAC = 0.5
 
 #: Size, in tokens, above which a floor-relevance entry is eligible for the
 #: fresh-bulk discount below.
@@ -79,13 +88,14 @@ FRESH_BULK_RECENCY_DISCOUNT = 0.6
 
 #: Two entries whose term sets overlap (Jaccard) at or above this are
 #: near-duplicates; the lower-ranked one is dropped rather than doubling up
-#: on the same content.
-REDUNDANCY_THRESHOLD = 0.85
+#: on the same content. Tuned default.
+REDUNDANCY_THRESHOLD = 0.86
 
 #: Hard cap on how many ranked candidates are even considered for budgeting,
-#: independent of the token budget itself — a sanity ceiling, not a tuning
-#: lever most corpora will ever hit.
-RETRIEVAL_K = 200
+#: independent of the token budget itself. Tuned default — deliberately
+#: small: it is the binding constraint that keeps a pack from ballooning to
+#: fill a large budget once the budget itself stops being the limit.
+RETRIEVAL_K = 12
 
 #: `--summary` scales the working budget down to this fraction of
 #: `knobs.pack_budget_tokens` — "the short version" rather than a separate
@@ -112,6 +122,42 @@ def _task_mentions(task: str) -> set[str]:
         if tok:
             out.add(tok)
     return out
+
+
+#: Relevance added, in `score`'s upstream `e.relevance`, when the task
+#: string names an entry outright — its full path, filename, or bare stem.
+#: Tuned default, carried from the reference implementation's config. THE
+#: BOUND: matching is exact, never substring (`code` in the task must not
+#: boost `decode.md`), and a stem shorter than `PATH_LITERAL_MIN_STEM` is
+#: ignored, because short stems are ordinary English rather than a
+#: reference. This is the ranking-only counterpart to
+#: `_named_for_admission` below — deliberately looser (it accepts a bare
+#: stem, admission does not) because the worst case here is one rank
+#: position, never a pinned slot.
+PATH_LITERAL_WEIGHT = 0.35
+
+#: Minimum bare-stem length `_named_literally` will treat as a reference
+#: rather than prose ("code", "index", "report" are all real filenames and
+#: all plausible task words below this length).
+PATH_LITERAL_MIN_STEM = 4
+
+
+def _named_literally(mentions: set[str], rel: str) -> bool:
+    """Is this entry named OUTRIGHT in the task string — full path, bare
+    filename (with extension), or bare stem? Runs on every tier, notes
+    included, and complements the stricter `_named_for_admission` below:
+    that rule refuses a bare stem because admission skips scoring outright,
+    while a stem here only ever adds relevance, so the worst case is one
+    rank position rather than an unearned pinned slot.
+    """
+    p = rel.lower()
+    if p in mentions:                       # notes/topic/note.md
+        return True
+    name = p.rsplit("/", 1)[-1]
+    if name in mentions:                    # note.md
+        return True
+    stem = name.rsplit(".", 1)[0] if "." in name else name
+    return len(stem) >= PATH_LITERAL_MIN_STEM and stem in mentions
 
 
 def _named_for_admission(mentions: set[str], entries: Sequence[Entry]) -> set[str]:
@@ -325,7 +371,11 @@ def pack(
 
     for e in entries:
         overlap = len(q & set(e.terms))
-        e.relevance = min(1.0, overlap / max(3, len(q))) if q else 0.0
+        rel = min(1.0, overlap / max(3, len(q))) if q else 0.0
+        # Named outright in the task — every tier. See _named_literally.
+        if mentions and _named_literally(mentions, e.path):
+            rel = min(1.0, rel + PATH_LITERAL_WEIGHT)
+        e.relevance = rel
 
     # --- admission off the top: pinned, named, and flag-driven entries ---
     admitted = _named_for_admission(mentions, entries)
@@ -392,10 +442,18 @@ def pack(
             dropped.append((e, "below relevance/recency cutoff"))
             accounted.add(id(e))
 
+    # A dropped always-include entry is the one drop a reader must not have
+    # to infer from an ordinary "over budget" line. Two distinct cases share
+    # the cap, so each gets its own wording:
     def _drop_note(e: Entry, reason: str) -> str:
         if e.path in admitted:
             return (
                 f"{reason} — requested by name/flag but over the "
+                f"{ALWAYS_INCLUDE_MAX_TOKENS:,}-token always-include cap; read it directly"
+            )
+        if e.always_include:
+            return (
+                f"{reason} — always-include root file over the "
                 f"{ALWAYS_INCLUDE_MAX_TOKENS:,}-token always-include cap; read it directly"
             )
         return reason
