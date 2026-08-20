@@ -42,3 +42,21 @@ history as expired; sweep+reclaim silently drops the session intent; Windows
 cp1252 stdout mojibakes stats em-dashes (clean under PYTHONUTF8=1). The
 board/stats loop held truthful state through the whole arc — the system
 earns its keep on first contact.
+
+## Session 4 — 2026-08-20 — second live dogfood: vault-inbox drain run as a board-monitored manager session — ~60K orchestrator + ~71K agent tokens
+
+noctuem's order: "use the new system to drain the inbox and apply all the
+items; don't do any work yourself — prompt and monitor." Read as the Session 3
+pattern: this corpus's 0.2.0 machinery as the monitoring layer, one worker
+dispatched with the hub's `/sia:inbox` procedure and Apply-all pre-approved.
+Machinery exercised: doctor (stale-stats warning caught correctly, then clean),
+domains (4 target repos registered), sessions board (claim with intent + six
+claimed paths → API heartbeat from a background loop → graceful release; the
+history file carries the intent), stats (sessions/doctor counts truthful at
+generation time). Worker result: 5 items → 5 routed, 0 needs-triage; four
+append-only commits (Lexi, Paige, Isolde TODOs; hub `_proposed/` draft spec +
+ideas entry + map line), zero legal-name hits in any diff, inbox header-only
+with a dated backup. All four pushed. No new engine findings — the heartbeat
+gap from Session 3 was worked around via the API (`SessionBoard.heartbeat`
+in a 10-min loop), which is exactly the ergonomics the open TODO item should
+close.

@@ -8,7 +8,8 @@
   (Session 3): board/domains/stats/doctor all held truthful state through a
   real cross-repo manager session; three ergonomics findings filed in TODO
   Medium (heartbeat CLI gap, intent lost on sweep+reclaim, Windows stdout
-  encoding).
+  encoding). Second dogfood 2026-08-20 (Session 4): vault-inbox drain run as
+  a board-monitored manager session — 5/5 routed, no new engine findings.
 - **Next:** PyPI publish, marketplace listing (TODO); fix the three dogfood
   findings (small, all scoped in TODO Medium).
 - **Guard (PUBLIC repo):** never commit the repo owner's personal name or
