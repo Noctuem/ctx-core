@@ -96,3 +96,22 @@ SSH to the server is denied in this permission mode — three documented
 deploy one-liners handed back. Engine held truthful state through a 45-min
 three-worker arc; no new findings. Lesson saved to memory: "apply the items"
 means build them.
+
+### Session 4, third pass (same session) — rulings applied
+
+noctuem's rulings: Isolde "go with the most recent ruling" (the signed-off
+review stands, Saturday refresh timer retires) + SSH granted; Lexi "do the
+pass yourself"; Paige "ssh and redeploy"; hub fork "don't care". Board
+re-claimed (`inbox-deploy-20260820`), Paige redeployed by the manager (one
+documented command, container up at `bb7b105`), two workers in parallel:
+Isolde (installer arms `isolde-weekly-review.timer` and disables the refresh
+timer first; 0.2.1 deployed via deploy-guard with DB backup, migrations
+009+010 applied, probes green; first real post Sat 2026-08-22; `1c1b11e`,
+`93e4270`) and Lexi (the worker IS the LLM: 34 live cards → 5 already
+varied, 0 arithmetic-inferrable, 10 hand-parameterized and verified over 500
+draws each, 19 static on purpose; FSRS history byte-identical; `0e7c8cc`).
+Two stale "not deployed" claims in project handoffs were found false by
+looking (Lexi live = the Anki app since 08-10; Isolde 08-18 features live
+since 08-18) and corrected in those repos. Hub Drift appended (`8bb4d8c`).
+Board: 3 sessions this arc, API-heartbeat loop each time, 0 expires; stats
+and doctor truthful throughout; no new engine findings.

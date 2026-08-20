@@ -10,8 +10,8 @@
   Medium (heartbeat CLI gap, intent lost on sweep+reclaim, Windows stdout
   encoding). Second dogfood 2026-08-20 (Session 4): vault-inbox drain run as
   a board-monitored manager session — 5/5 routed, then built by three
-  parallel workers (Lexi/Paige/Isolde, all pushed, deploys pending on
-  noctuem's hand); no new engine findings.
+  parallel workers (Lexi/Paige/Isolde, all pushed; Paige + Isolde redeployed,
+  Lexi variance pass applied to the live cards); no new engine findings.
   Third dogfood 2026-08-20 (Session 5): a fresh PRIVATE corpus for a non-code
   domain driven end-to-end (init/claim/intake/pack/doctor/release/stats); one
   new finding (`pack --budget`).
