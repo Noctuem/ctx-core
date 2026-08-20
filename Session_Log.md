@@ -76,3 +76,20 @@ finding filed in TODO Medium: `ctx pack` has no `--budget N` override; with
 and the manifest filled with low-relevance filler — fixed per-corpus via
 `.ctxrc.toml pack_budget_tokens = 20000`. The corpus itself is private and
 lives outside this repo.
+
+Same session, second pass — noctuem's correction: "I wanted those items done,
+not just put in a todo." Board re-claimed (`inbox-build-20260820`, API
+heartbeat loop, ~45 min live — longest session the board has held without
+sweeping), three Opus builders in parallel, one per repo: Lexi (old-card
+variance: proven parameterization inferred from each card's own arithmetic,
+one tap per deck via the existing PATCH; 219/106 green, `7458054`), Paige
+(completed tasks fold into a collapsed section, storage untouched; web 53
+green, `425b007`), Isolde (header→live workout clock `2a87e51`; deviation
+detection + daily/weekly workload + trends with migration 009 and `API.md`
+minted `44c6857`; weekly review with Discord yes/no sign-off via the hub
+helper, dry-run by default, migration 010 `ef42fa8`; server 294 / client 281).
+All pushed; Isolde Drift filed in the hub spec (`deb7d5a`). Redeploys NOT run:
+SSH to the server is denied in this permission mode — three documented
+deploy one-liners handed back. Engine held truthful state through a 45-min
+three-worker arc; no new findings. Lesson saved to memory: "apply the items"
+means build them.
