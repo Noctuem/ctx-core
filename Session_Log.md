@@ -77,7 +77,10 @@ and the manifest filled with low-relevance filler — fixed per-corpus via
 `.ctxrc.toml pack_budget_tokens = 20000`. The corpus itself is private and
 lives outside this repo.
 
-Same session, second pass — noctuem's correction: "I wanted those items done,
+### Session 4, second pass (same session as the Session 4 entry above; landed after
+### Session 5's entry because that parallel session pushed first)
+
+noctuem's correction: "I wanted those items done,
 not just put in a todo." Board re-claimed (`inbox-build-20260820`, API
 heartbeat loop, ~45 min live — longest session the board has held without
 sweeping), three Opus builders in parallel, one per repo: Lexi (old-card
