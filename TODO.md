@@ -9,6 +9,14 @@
 
 ## Medium
 
+- [ ] `ctx pack` has no per-invocation `--budget N` override; the only knobs
+  are the 8000 default (2800 under `--summary`) or editing `.ctxrc.toml`.
+  Found dogfooding a fresh corpus whose three load-bearing notes ran 3.8k /
+  3.8k / 6.7k tokens: `--summary` dropped all three as `oversized` and packed
+  low-relevance filler to 100% of budget -- a truthful manifest, but the
+  wrong working set. Add `--budget N` (and consider a doctor/pack warning
+  when the top-ranked file is itself oversized) [2026-08-20, second dogfood:
+  first non-ctx-core corpus]
 - [ ] Sessions CLI has no `heartbeat` subcommand (only list/claim/release), so
   a CLI-driven session can't refresh liveness and gets swept `expired` at
   stale_seconds=1800 while genuinely active; found dogfooding a ~40-min live
