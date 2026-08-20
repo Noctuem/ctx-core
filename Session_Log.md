@@ -27,3 +27,18 @@ the full intake→route→board→stats loop verified. Landing hazard caught: a
 worktree merge nearly re-introduced the purged pre-amend commit — landed by
 cherry-pick, ancestry verified clean. Publication of both releases rides the
 maintainer's pending force-push.
+
+## Session 3 — 2026-08-19/20 — first live dogfood: manager session monitored on the 0.2.0 machinery — ~140K orchestrator + ~830K agent tokens
+
+Ran a real cross-repo manager session (NVS Waves 7-9: ui, e2e, rights-ack
+gate — all landed, all 13 NVS modules now built) with this corpus's 0.2.0
+machinery as the monitoring layer. Exercised live: doctor (2 clean runs, 1
+correct staleness warning), sessions board (claim, expiry sweep, re-claim,
+graceful release — full lifecycle), domains registry (2 repos), stats
+pipeline (correctly recorded 2 starts / 3 claims / 1 expire / doctor rate).
+Three findings filed in TODO Medium, all ergonomics not corruption: no
+`sessions heartbeat` CLI subcommand so real sessions >30min sweep to
+history as expired; sweep+reclaim silently drops the session intent; Windows
+cp1252 stdout mojibakes stats em-dashes (clean under PYTHONUTF8=1). The
+board/stats loop held truthful state through the whole arc — the system
+earns its keep on first contact.
