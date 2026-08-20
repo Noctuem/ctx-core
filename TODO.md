@@ -9,6 +9,18 @@
 
 ## Medium
 
+- [ ] Sessions CLI has no `heartbeat` subcommand (only list/claim/release), so
+  a CLI-driven session can't refresh liveness and gets swept `expired` at
+  stale_seconds=1800 while genuinely active; found dogfooding a ~40-min live
+  manager session. Add `ctx sessions heartbeat <id>` (API `.heartbeat()`
+  already exists) or make long-lived CLI use ergonomic some other way.
+  Consequence observed: after the sweep, re-claiming the same session_id
+  registers fresh with intent='' — the sweep+reclaim path silently drops the
+  session's intent [2026-08-19, first live dogfood session]
+- [ ] Windows console mojibake: `ctx stats` markdown (em-dashes) goes through
+  cp1252 stdout and renders `?` in UTF-8 terminals; clean under PYTHONUTF8=1.
+  Force UTF-8 stdout/stderr in the CLI entry point
+  [2026-08-19, first live dogfood session]
 - [ ] Plugin-marketplace + community listing per docs/ADOPTION.md checklist
   (who submits: maintainer's call) [2026-08-18]
 - [ ] Hook upgrade path: switch .claude/hooks event append from package
