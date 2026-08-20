@@ -25,3 +25,7 @@ _build/
 # Local build machinery (never published; .claude/skills|hooks|commands stay tracked)
 .claude/roster.md
 .claude/agents/
+
+# Runtime corpus state when the engine repo itself hosts a session (event log,
+# board, stats products) -- never published; template/var is the shipped shape
+var/
