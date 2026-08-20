@@ -60,3 +60,19 @@ with a dated backup. All four pushed. No new engine findings — the heartbeat
 gap from Session 3 was worked around via the API (`SessionBoard.heartbeat`
 in a 10-min loop), which is exactly the ergonomics the open TODO item should
 close.
+
+## Session 5 — 2026-08-20 — third dogfood: a fresh corpus for a non-code domain, manager session end-to-end — ~75K orchestrator + ~690K agent tokens
+
+Stood up a second, private ctx-core corpus from `template/` for a grad-school
+domain (no code, all PDFs/docx/xlsx) and drove a real task through the whole
+0.2.0 surface: `init --answers`, `sessions claim` + a hand-rolled re-claim
+heartbeat loop (the Session 3 gap, still open; kept the session live for the
+full ~45 min run, 0 expires), `intake add` → `route`, four subagents writing
+notes, `pack` feeding the final planning worker, `doctor` before every commit,
+`sessions release`, `stats` truthful at every read (2 packs, 3 oversized
+drops, 3/3 doctor, intake latency, 1 start / 3 claims / 1 release). One new
+finding filed in TODO Medium: `ctx pack` has no `--budget N` override; with
+`--summary` (2,800) the three load-bearing notes were dropped as `oversized`
+and the manifest filled with low-relevance filler — fixed per-corpus via
+`.ctxrc.toml pack_budget_tokens = 20000`. The corpus itself is private and
+lives outside this repo.

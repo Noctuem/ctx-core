@@ -10,8 +10,13 @@
   Medium (heartbeat CLI gap, intent lost on sweep+reclaim, Windows stdout
   encoding). Second dogfood 2026-08-20 (Session 4): vault-inbox drain run as
   a board-monitored manager session — 5/5 routed, no new engine findings.
-- **Next:** PyPI publish, marketplace listing (TODO); fix the three dogfood
-  findings (small, all scoped in TODO Medium).
+  Third dogfood 2026-08-20 (Session 5): a fresh PRIVATE corpus for a non-code
+  domain driven end-to-end (init/claim/intake/pack/doctor/release/stats); one
+  new finding (`pack --budget`).
+- **Next:** PyPI publish, marketplace listing (TODO); fix the four dogfood
+  findings (small, all scoped in TODO Medium — heartbeat CLI, intent on
+  sweep+reclaim, Windows stdout encoding, `pack --budget` override; the last
+  from Session 5's third dogfood on a fresh non-code corpus, 2026-08-20).
 - **Guard (PUBLIC repo):** never commit the repo owner's personal name or
   absolute local paths; author identity is Noctuem. Grep staged changes before
   every push.
