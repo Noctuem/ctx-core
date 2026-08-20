@@ -4,9 +4,13 @@
   modules).
 - **Where we are:** v0.2.0 built 2026-08-18 (sessions board, intake layers,
   stats pipeline; 324 tests); v0.1.0+v0.2.0 PUBLISHED 2026-08-18,
-  remote history clean, CI matrix green.
-- **Next:** PyPI publish, marketplace listing (TODO); then real-domain
-  dogfooding.
+  remote history clean, CI matrix green. First live dogfood 2026-08-19/20
+  (Session 3): board/domains/stats/doctor all held truthful state through a
+  real cross-repo manager session; three ergonomics findings filed in TODO
+  Medium (heartbeat CLI gap, intent lost on sweep+reclaim, Windows stdout
+  encoding).
+- **Next:** PyPI publish, marketplace listing (TODO); fix the three dogfood
+  findings (small, all scoped in TODO Medium).
 - **Guard (PUBLIC repo):** never commit the repo owner's personal name or
   absolute local paths; author identity is Noctuem. Grep staged changes before
   every push.
@@ -14,3 +18,4 @@
   record).
 
 <!-- upstream-reconciled: #17 2026-08-18 -->
+<!-- sia-reconciled: #18 2026-08-20 -->
