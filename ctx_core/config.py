@@ -38,6 +38,16 @@ class Knobs:
     pack_budget_tokens: int = 8000
     """Default packer budget, in tokens, for one `ctx pack` invocation."""
 
+    core_budget_tokens: int | None = None
+    """Ceiling `ctx doctor`'s L1 hard check budgets force-loaded `core/`
+    against. `None` (the default) means "same as `pack_budget_tokens`" --
+    resolved at doctor-call time, never baked into this default itself, so
+    a corpus that only ever sets `pack_budget_tokens` keeps identical
+    doctor behavior to before this field existed. Set explicitly to
+    un-conflate the two: reusing `pack_budget_tokens` for both meant
+    worst-case context was core + a full pack, up to 2x the one knob a
+    corpus operator actually tunes (review pass item 3, 2026-08-21)."""
+
     # --- archive (m4) ---
     archive_stub_threshold_tokens: int = 2000
     """Note size, in tokens, above which `ctx archive` content-addresses

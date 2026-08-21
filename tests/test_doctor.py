@@ -330,7 +330,7 @@ def test_doctor_l1_over_tiny_budget_is_hard_failure(tmp_path: Path) -> None:
 
     assert report.ok is False
     assert any(
-        "force-loaded L1" in f and "core/profile.md" in f and "pack_budget_tokens" in f
+        "force-loaded L1" in f and "core/profile.md" in f and "core_budget_tokens" in f
         for f in report.hard_failures
     )
 
@@ -343,6 +343,42 @@ def test_doctor_l1_under_budget_no_failure(tmp_path: Path) -> None:
     report = doctor(layout, knobs)
 
     assert not any("force-loaded L1" in f for f in report.hard_failures)
+
+
+def test_doctor_core_budget_tokens_defaults_to_pack_budget_tokens(tmp_path: Path) -> None:
+    """`core_budget_tokens` unset (the `None` default) must behave exactly
+    like the pre-item-3 code that always checked `pack_budget_tokens` --
+    zero behavior change at defaults."""
+    layout = Layout(tmp_path)
+    _write(layout.core / "profile.md", LONG_BODY)
+
+    with_explicit = doctor(layout, Knobs(pack_budget_tokens=5, core_budget_tokens=5))
+    with_default = doctor(layout, Knobs(pack_budget_tokens=5))
+
+    assert with_explicit.hard_failures == with_default.hard_failures
+    assert with_default.ok is False
+
+
+def test_doctor_core_budget_tokens_is_its_own_ceiling(tmp_path: Path) -> None:
+    """The whole point of item 3: raising `pack_budget_tokens` alone must
+    not silently double the L1 allowance -- `core_budget_tokens`, once set,
+    governs the L1 check independently."""
+    layout = Layout(tmp_path)
+    _write(layout.core / "profile.md", LONG_BODY)
+
+    # pack_budget_tokens raised far past core/'s size, but core_budget_tokens
+    # pinned tiny -- must still hard-fail on the L1 check.
+    report = doctor(layout, Knobs(pack_budget_tokens=100_000, core_budget_tokens=5))
+
+    assert report.ok is False
+    assert any(
+        "force-loaded L1" in f and "core_budget_tokens" in f for f in report.hard_failures
+    )
+
+    # And the inverse: pack_budget_tokens tiny, core_budget_tokens generous
+    # -- L1 must pass even though the pack budget alone would have failed it.
+    report2 = doctor(layout, Knobs(pack_budget_tokens=5, core_budget_tokens=100_000))
+    assert not any("force-loaded L1" in f for f in report2.hard_failures)
 
 
 # ==========================================================================

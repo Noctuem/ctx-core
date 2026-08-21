@@ -19,8 +19,10 @@ this module only reports) and four SOFT (advisory, never fail the run):
 - Still-template check (SOFT): `Layout.is_template_state()` — a nudge, not a
   defect; a fresh clone legitimately starts here.
 - Budget check (HARD): force-loaded L1 (`core/`) must fit inside
-  `knobs.pack_budget_tokens`, using the exact same token estimate the packer
-  uses (`indexing.build_index`'s `Entry.tokens`, itself `approx_tokens` —
+  `knobs.core_budget_tokens` (defaults to `knobs.pack_budget_tokens` when
+  unset — see `_check_l1_budget`), using the exact same token estimate the
+  packer uses (`indexing.build_index`'s `Entry.tokens`, itself
+  `approx_tokens` —
   one seam, not reinvented here).
 - Unrouted-New check (SOFT always, escalating to HARD): every item still
   sitting in `notes/intake/` (m12) is a warning the moment it exists --
@@ -252,7 +254,16 @@ def _check_template_state(layout: Layout) -> list[str]:
 
 
 def _check_l1_budget(entries: list[Entry], knobs: Knobs) -> list[str]:
-    """Force-loaded L1 (`core/`) must fit inside `knobs.pack_budget_tokens`.
+    """Force-loaded L1 (`core/`) must fit inside `knobs.core_budget_tokens`
+    -- its OWN ceiling, un-conflated from `knobs.pack_budget_tokens` (review
+    pass item 3, 2026-08-21: reusing the pack budget for both meant
+    worst-case context was core + a full pack, up to 2x the one knob an
+    operator actually tunes). `core_budget_tokens` defaults to `None`,
+    meaning "same as pack_budget_tokens" -- resolved HERE, at check time,
+    rather than baked into `Knobs`'s own default, so a corpus that has
+    never heard of `core_budget_tokens` (default OR a `.ctxrc.toml` that
+    only sets `pack_budget_tokens`) sees zero behavior change.
+
     Token counts come from `entries` (built by `indexing.build_index`, which
     computes every `Entry.tokens` via `indexing.approx_tokens`) — the same
     estimate `packer.pack` budgets against, reused rather than reimplemented
@@ -260,12 +271,14 @@ def _check_l1_budget(entries: list[Entry], knobs: Knobs) -> list[str]:
     """
     core_entries = sorted((e for e in entries if e.tier == "core"), key=lambda e: -e.tokens)
     total = sum(e.tokens for e in core_entries)
-    budget = int(knobs.pack_budget_tokens)
+    budget = int(
+        knobs.core_budget_tokens if knobs.core_budget_tokens is not None else knobs.pack_budget_tokens
+    )
     if total <= budget:
         return []
     breakdown = ", ".join(f"{e.path} ({e.tokens:,} tok)" for e in core_entries)
     return [
-        f"force-loaded L1 (core/) exceeds pack_budget_tokens: {total:,} tok > "
+        f"force-loaded L1 (core/) exceeds core_budget_tokens: {total:,} tok > "
         f"{budget:,} tok budget. Contributing files: {breakdown}"
     ]
 
