@@ -35,6 +35,7 @@ from ctx_core.events import EventKind, EventLog, default_eventlog_path
 from ctx_core.layout import Layout
 from ctx_core.packer import pack
 from ctx_core.stats import (
+    CLAIM_OVERLAP_OBSERVED_KIND,
     INTAKE_ROUTE_KIND,
     SCHEMA_VERSION,
     SESSION_CLAIM_KIND,
@@ -429,6 +430,34 @@ def test_session_event_kinds_counted_in_window(no_ctx_yield_on_path: None, tmp_p
 
     assert report.sessions["starts_in_window"] == 1
     assert report.sessions["claims_in_window"] == 2
+
+
+def test_claim_overlap_observed_events_counted_in_window(
+    no_ctx_yield_on_path: None, tmp_path: Path
+) -> None:
+    """`claim_overlap_observed` (the Bash-write advisory the PostToolUse
+    hook emits, review pass item 5) is windowed and folded into the
+    Sessions section -- never surfaced as a `claim_conflicts` entry, which
+    is a different, live-snapshot-only signal."""
+    layout = Layout(tmp_path)
+    live_dir = layout.var / "sessions" / "live"
+    live_dir.mkdir(parents=True)
+    _write(live_dir / "sess-a.json", json.dumps(_session_file("sess-a", [])))
+
+    log = EventLog(default_eventlog_path(layout.root, Knobs().eventlog_path))
+    log.append(
+        CLAIM_OVERLAP_OBSERVED_KIND,
+        {"session_id": "sess-a", "other_session": "sess-b", "path": "notes/foo.md"},
+    )
+    log.append(
+        CLAIM_OVERLAP_OBSERVED_KIND,
+        {"session_id": "sess-a", "other_session": "sess-c", "path": "notes/bar.md"},
+    )
+
+    report = compute_stats(layout, Knobs(), now=FIXED_NOW)
+
+    assert report.sessions["claim_overlaps_observed_in_window"] == 2
+    assert "claim-overlaps observed: 2" in report.render_md()
 
 
 # ==========================================================================

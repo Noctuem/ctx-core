@@ -97,6 +97,13 @@ SESSION_EXPIRE_KIND = "session_expire"
 INTAKE_ADD_KIND = "intake_add"
 INTAKE_ROUTE_KIND = "intake_route"
 
+#: `kind` the `PostToolUse` hook's Bash claim-overlap OBSERVER appends
+#: (`.claude/hooks/ctx_eventlog_hook.py`, review pass item 5, 2026-08-21) --
+#: advisory only, never a guard; folded here as a windowed count in the
+#: Sessions section. Same plain-string convention as the SESSION_*/INTAKE_*
+#: kinds above.
+CLAIM_OVERLAP_OBSERVED_KIND = "claim_overlap_observed"
+
 #: `var/sessions/live/` and `var/sessions/history/` directory names, per
 #: the m11 build spec's on-disk contract.
 SESSIONS_SUBDIR = "sessions"
@@ -386,7 +393,8 @@ class StatsReport:
             lines.append(
                 f"Live: {s['n_live']:,}. History: {s['n_history']:,}. This window — "
                 f"starts: {s['starts_in_window']:,}, claims: {s['claims_in_window']:,}, "
-                f"releases: {s['releases_in_window']:,}, expires: {s['expires_in_window']:,}."
+                f"releases: {s['releases_in_window']:,}, expires: {s['expires_in_window']:,}, "
+                f"Bash claim-overlaps observed: {s['claim_overlaps_observed_in_window']:,}."
             )
             conflicts = s["claim_conflicts"]
             lines += ["", f"**Claim conflicts (current live snapshot, {len(conflicts):,}):**", ""]
@@ -651,6 +659,9 @@ def _fold_sessions(layout: Layout, windowed: list[dict]) -> dict[str, Any]:
         "releases_in_window": sum(1 for e in windowed if e.get("kind") == SESSION_RELEASE_KIND),
         "expires_in_window": sum(1 for e in windowed if e.get("kind") == SESSION_EXPIRE_KIND),
         "claim_conflicts": [[a, b, p] for a, b, p in conflicts],
+        "claim_overlaps_observed_in_window": sum(
+            1 for e in windowed if e.get("kind") == CLAIM_OVERLAP_OBSERVED_KIND
+        ),
     }
 
 

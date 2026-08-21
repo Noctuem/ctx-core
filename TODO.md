@@ -15,9 +15,16 @@
   import to the `ctx` console script now that the CLI exists [2026-08-18]
 - [ ] `yield-bridge`: consider emitting an eventlog line per composition run
   (design note in build records) [2026-08-18]
-- [ ] Claim-guard limit: Bash-issued writes are unguarded (named limit in
-  .claude/hooks/README.md); revisit if a reliable path signal appears
-  [2026-08-18]
+- [ ] Claim-guard limit: Bash-issued writes are still unguarded — the guard's
+  `PreToolUse` deny path stays Edit/MultiEdit/Write/NotebookEdit only; a
+  reliable pre-write path signal for Bash still doesn't exist (a shell
+  command's targets can sit in arbitrary argv positions). **2026-08-21
+  (review pass item 5):** added an observe-only advisory instead —
+  `ctx_eventlog_hook.py` mtime-checks other live sessions' claimed files
+  after a Bash call and appends `claim_overlap_observed` (windowed count in
+  `ctx stats`' Sessions section); never denies. Named limit stays documented
+  in `.claude/hooks/README.md`; revisit the guard gap itself if a reliable
+  path signal ever appears [2026-08-18]
 - [ ] Intake completion interview (file-and-track shipped; completion prompts
   deferred — revisit if filing-without-completing dominates) [2026-08-18]
 

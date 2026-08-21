@@ -505,6 +505,250 @@ def test_hook_falls_back_to_process_cwd_when_no_corpus_found(tmp_path: Path):
 
 
 # --------------------------------------------------------------------------
+# Claim-overlap OBSERVER (Bash tool calls only -- review pass item 5,
+# amends the Medium TODO "Bash-issued writes are unguarded"). Observe, never
+# guard: PreToolUse deny (ctx_session_guard_hook.py) stays the only place
+# this codebase blocks a tool call.
+# --------------------------------------------------------------------------
+
+
+def _events(corpus: Path) -> list[dict]:
+    path = corpus / "var" / "log" / "events.jsonl"
+    if not path.is_file():
+        return []
+    return [json.loads(ln) for ln in path.read_text(encoding="utf-8").split("\n") if ln.strip()]
+
+
+def test_hook_bash_call_observes_a_foreign_claim_overlap(tmp_path: Path):
+    corpus = tmp_path / "corpus"
+    _make_corpus(corpus)
+    from ctx_core.layout import Layout
+    from ctx_core.sessions import SessionBoard
+
+    board = SessionBoard(Layout(corpus))
+    board.register("other-session", "editing gardening notes")
+    claimed = corpus / "notes" / "foo.md"
+    claimed.parent.mkdir(parents=True, exist_ok=True)
+    claimed.write_text("hello", encoding="utf-8")
+    board.claim("other-session", ["notes/foo.md"])
+
+    env = dict(os.environ)
+    env["PYTHONPATH"] = str(REPO_ROOT)
+    payload = {
+        "cwd": str(corpus),
+        "hook_event_name": "PostToolUse",
+        "tool_name": "Bash",
+        "session_id": "watcher-session",
+    }
+    result = _run_hook(payload, cwd=tmp_path, env=env)
+
+    assert result.returncode == 0, result.stderr
+    overlap_events = [r for r in _events(corpus) if r["kind"] == "claim_overlap_observed"]
+    assert len(overlap_events) == 1
+    assert overlap_events[0]["payload"] == {
+        "session_id": "watcher-session",
+        "other_session": "other-session",
+        "path": "notes/foo.md",
+    }
+
+
+def test_hook_bash_call_two_foreign_claims_emit_two_distinct_events(tmp_path: Path):
+    """One event per (other_session, path) hit -- never deduped down to one
+    per session, never fired twice for the same pair."""
+    corpus = tmp_path / "corpus"
+    _make_corpus(corpus)
+    from ctx_core.layout import Layout
+    from ctx_core.sessions import SessionBoard
+
+    board = SessionBoard(Layout(corpus))
+    board.register("other-session", "editing")
+    (corpus / "notes").mkdir(parents=True, exist_ok=True)
+    (corpus / "notes" / "a.md").write_text("a", encoding="utf-8")
+    (corpus / "notes" / "b.md").write_text("b", encoding="utf-8")
+    board.claim("other-session", ["notes/a.md", "notes/b.md"])
+
+    env = dict(os.environ)
+    env["PYTHONPATH"] = str(REPO_ROOT)
+    payload = {
+        "cwd": str(corpus),
+        "hook_event_name": "PostToolUse",
+        "tool_name": "Bash",
+        "session_id": "watcher-session",
+    }
+    result = _run_hook(payload, cwd=tmp_path, env=env)
+
+    assert result.returncode == 0, result.stderr
+    overlap_events = [r for r in _events(corpus) if r["kind"] == "claim_overlap_observed"]
+    paths = sorted(e["payload"]["path"] for e in overlap_events)
+    assert paths == ["notes/a.md", "notes/b.md"]
+
+
+def test_hook_bash_call_no_events_beyond_the_bound_with_no_foreign_claims(tmp_path: Path):
+    corpus = tmp_path / "corpus"
+    _make_corpus(corpus)
+    env = dict(os.environ)
+    env["PYTHONPATH"] = str(REPO_ROOT)
+    payload = {
+        "cwd": str(corpus),
+        "hook_event_name": "PostToolUse",
+        "tool_name": "Bash",
+        "session_id": "watcher-session",
+    }
+    result = _run_hook(payload, cwd=tmp_path, env=env)
+
+    assert result.returncode == 0, result.stderr
+    events = _events(corpus)
+    assert len(events) == 1  # the ordinary hook_post_tool_use append, nothing else
+    assert events[0]["kind"] == "hook_post_tool_use"
+
+
+def test_hook_bash_call_skips_a_directory_claim(tmp_path: Path):
+    """A claimed path that is a DIRECTORY (never a file) is skipped -- an
+    mtime on a directory says nothing about which file inside it changed."""
+    corpus = tmp_path / "corpus"
+    _make_corpus(corpus)
+    from ctx_core.layout import Layout
+    from ctx_core.sessions import SessionBoard
+
+    board = SessionBoard(Layout(corpus))
+    board.register("other-session", "editing a whole tree")
+    (corpus / "notes" / "sub").mkdir(parents=True, exist_ok=True)
+    (corpus / "notes" / "sub" / "leaf.md").write_text("x", encoding="utf-8")
+    board.claim("other-session", ["notes/sub"])  # a directory claim
+
+    env = dict(os.environ)
+    env["PYTHONPATH"] = str(REPO_ROOT)
+    payload = {
+        "cwd": str(corpus),
+        "hook_event_name": "PostToolUse",
+        "tool_name": "Bash",
+        "session_id": "watcher-session",
+    }
+    result = _run_hook(payload, cwd=tmp_path, env=env)
+
+    assert result.returncode == 0, result.stderr
+    assert not any(r["kind"] == "claim_overlap_observed" for r in _events(corpus))
+
+
+def test_hook_bash_call_no_event_when_foreign_claim_predates_the_window(tmp_path: Path):
+    """A foreign claim whose file hasn't changed since well before the
+    fallback window is NOT an overlap -- this session's own previous hook
+    event doesn't exist yet (first Bash call), so the fixed
+    `CLAIM_OVERLAP_FALLBACK_WINDOW_SECONDS` window is what's being tested
+    here, not a real previous ts."""
+    import time as _time
+
+    corpus = tmp_path / "corpus"
+    _make_corpus(corpus)
+    from ctx_core.layout import Layout
+    from ctx_core.sessions import SessionBoard
+
+    board = SessionBoard(Layout(corpus))
+    board.register("other-session", "old, untouched work")
+    stale_file = corpus / "notes" / "old.md"
+    stale_file.parent.mkdir(parents=True, exist_ok=True)
+    stale_file.write_text("old", encoding="utf-8")
+    old_mtime = _time.time() - 1000  # well past the 120s fallback window
+    os.utime(stale_file, (old_mtime, old_mtime))
+    board.claim("other-session", ["notes/old.md"])
+
+    env = dict(os.environ)
+    env["PYTHONPATH"] = str(REPO_ROOT)
+    payload = {
+        "cwd": str(corpus),
+        "hook_event_name": "PostToolUse",
+        "tool_name": "Bash",
+        "session_id": "watcher-session",
+    }
+    result = _run_hook(payload, cwd=tmp_path, env=env)
+
+    assert result.returncode == 0, result.stderr
+    assert not any(r["kind"] == "claim_overlap_observed" for r in _events(corpus))
+
+
+def test_hook_bash_call_stat_calls_are_capped(tmp_path: Path):
+    """More claimed files than `CLAIM_OVERLAP_STAT_CAP` must not turn one
+    Bash call into an unbounded filesystem sweep -- the observed count is
+    capped, not the raw claim count."""
+    corpus = tmp_path / "corpus"
+    _make_corpus(corpus)
+    from ctx_core.layout import Layout
+    from ctx_core.sessions import SessionBoard
+
+    board = SessionBoard(Layout(corpus))
+    board.register("other-session", "a huge claim set")
+    paths = []
+    for i in range(60):
+        p = corpus / "notes" / f"n{i}.md"
+        p.write_text(str(i), encoding="utf-8")
+        paths.append(f"notes/n{i}.md")
+    board.claim("other-session", paths)
+
+    env = dict(os.environ)
+    env["PYTHONPATH"] = str(REPO_ROOT)
+    payload = {
+        "cwd": str(corpus),
+        "hook_event_name": "PostToolUse",
+        "tool_name": "Bash",
+        "session_id": "watcher-session",
+    }
+    result = _run_hook(payload, cwd=tmp_path, env=env)
+
+    assert result.returncode == 0, result.stderr
+    overlap_events = [r for r in _events(corpus) if r["kind"] == "claim_overlap_observed"]
+    # All 60 claimed files were just written (well inside the fallback
+    # window), so every one of them WOULD emit if uncapped -- the cap is
+    # the only thing keeping this at 50, not "nothing else overlapped".
+    assert len(overlap_events) == 50
+
+
+def test_hook_bash_call_exits_zero_on_a_corrupt_log(tmp_path: Path):
+    corpus = tmp_path / "corpus"
+    _make_corpus(corpus)
+    log_dir = corpus / "var" / "log"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    (log_dir / "events.jsonl").write_text("not valid json at all\n", encoding="utf-8")
+
+    env = dict(os.environ)
+    env["PYTHONPATH"] = str(REPO_ROOT)
+    payload = {
+        "cwd": str(corpus),
+        "hook_event_name": "PostToolUse",
+        "tool_name": "Bash",
+        "session_id": "watcher-session",
+    }
+    result = _run_hook(payload, cwd=tmp_path, env=env)
+
+    assert result.returncode == 0, result.stderr
+
+
+def test_hook_non_bash_tool_never_runs_the_observer(tmp_path: Path):
+    corpus = tmp_path / "corpus"
+    _make_corpus(corpus)
+    from ctx_core.layout import Layout
+    from ctx_core.sessions import SessionBoard
+
+    board = SessionBoard(Layout(corpus))
+    board.register("other-session", "editing")
+    (corpus / "notes").mkdir(parents=True, exist_ok=True)
+    (corpus / "notes" / "a.md").write_text("a", encoding="utf-8")
+    board.claim("other-session", ["notes/a.md"])
+
+    env = dict(os.environ)
+    env["PYTHONPATH"] = str(REPO_ROOT)
+    payload = {
+        "cwd": str(corpus),
+        "hook_event_name": "PostToolUse",
+        "tool_name": "Edit",  # not Bash -- observer must not run
+        "session_id": "watcher-session",
+    }
+    result = _run_hook(payload, cwd=tmp_path, env=env)
+
+    assert result.returncode == 0, result.stderr
+    assert not any(r["kind"] == "claim_overlap_observed" for r in _events(corpus))
+
+
+# --------------------------------------------------------------------------
 # ctx_session_start_hook.py (SessionStart)
 # --------------------------------------------------------------------------
 

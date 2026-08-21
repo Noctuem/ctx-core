@@ -24,6 +24,22 @@ resume/clear) to avoid the `session_stale_seconds` sweep. A session the
 board has never seen (`SessionNotFoundError`) is a no-op, not a failure --
 same fail-open contract as everything else here.
 
+**Bash claim-overlap OBSERVER, not a guard.** `ctx_session_guard_hook.py`
+below cannot cover `Bash` calls -- there is no single reliable field in a
+Bash `tool_input` naming the path(s) a shell command touches. So on a
+`Bash` tool call, after the event append, this hook instead mtime-checks
+every **file** another live session claims (a claimed directory is
+skipped) against this session's own previous hook event timestamp (or a
+fixed 120s fallback window if that can't be determined), and appends one
+`claim_overlap_observed` event per `(other_session, path)` hit -- capped
+at 50 stat checks per call so a large claim set can't turn every Bash call
+into a filesystem sweep. This **never denies anything**; it is purely
+advisory, folded into `ctx stats`' Sessions section as a windowed count.
+The guard hook's `PreToolUse` deny path stays the only place this codebase
+actually blocks a tool call -- see its own "named limit" note below, which
+this observer amends without closing (a Bash write into another session's
+claim still isn't *blocked*, only noticed after the fact).
+
 ## `ctx_session_start_hook.py` — `SessionStart`
 
 Registers this session on the live-session board (`var/sessions/live/`,
@@ -46,6 +62,15 @@ the one hook that can actually stop a tool call:
   past `session_stale_seconds`, or any internal error). A broken guard
   must never brick a session, so anything unexpected permits rather than
   denies.
+
+**Named limit: `Bash`-issued writes are unguarded.** `Bash` isn't in this
+guard's `WRITE_TOOLS` -- a shell command can write to a path in arbitrary
+argv positions (a pipeline, redirect, `mv`), and there is no single
+reliable field to extract a claim target from without either a parser
+nobody trusts or false denials on unrelated commands. `ctx_eventlog_hook.py`
+above amends this with an **observe-only** advisory (never a deny) rather
+than a guard, because a reliable pre-write path signal for Bash doesn't
+exist.
 
 ## `ctx_session_end_hook.py` — `SessionEnd` (or `Stop`)
 
