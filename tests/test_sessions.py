@@ -19,6 +19,7 @@ from pathlib import Path
 
 import pytest
 
+from ctx_core.config import Knobs
 from ctx_core.events import EventLog
 from ctx_core.layout import Layout
 from ctx_core.sessions import (
@@ -65,6 +66,43 @@ def test_generate_session_id_is_unique_and_filesystem_safe() -> None:
     b = generate_session_id()
     assert a != b
     assert a.isalnum()  # pure hex -- always a valid filename stem
+
+
+# ==========================================================================
+# knobs= wiring (docs-drift fix: SessionBoard reads Knobs directly)
+# ==========================================================================
+
+
+def test_default_construction_matches_default_knobs(tmp_path: Path) -> None:
+    layout = Layout(tmp_path)
+    log = EventLog(tmp_path / "var" / "log" / "events.jsonl")
+
+    board = SessionBoard(layout, event_log=log)
+
+    assert board.stale_seconds == Knobs().session_stale_seconds
+    assert board.heartbeat_seconds == Knobs().session_heartbeat_seconds
+
+
+def test_knobs_param_supplies_stale_and_heartbeat_seconds(tmp_path: Path) -> None:
+    layout = Layout(tmp_path)
+    log = EventLog(tmp_path / "var" / "log" / "events.jsonl")
+    knobs = Knobs(session_stale_seconds=42.0, session_heartbeat_seconds=7.0)
+
+    board = SessionBoard(layout, knobs=knobs, event_log=log)
+
+    assert board.stale_seconds == 42.0
+    assert board.heartbeat_seconds == 7.0
+
+
+def test_explicit_keyword_wins_over_knobs(tmp_path: Path) -> None:
+    layout = Layout(tmp_path)
+    log = EventLog(tmp_path / "var" / "log" / "events.jsonl")
+    knobs = Knobs(session_stale_seconds=42.0, session_heartbeat_seconds=7.0)
+
+    board = SessionBoard(layout, knobs=knobs, stale_seconds=99.0, event_log=log)
+
+    assert board.stale_seconds == 99.0  # explicit keyword, not the knob
+    assert board.heartbeat_seconds == 7.0  # falls back to knobs
 
 
 # ==========================================================================

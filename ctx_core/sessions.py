@@ -21,11 +21,17 @@ same as `notes/foo` and `notes/foo` (identical). `check()` is the read-only
 primitive a guard hook (m14) wires to answer "does a DIFFERENT live session
 claim this path" -- it does not itself block anything.
 
-`stale_seconds` / `heartbeat_seconds`: `Knobs` (m1) is frozen for this
-build and does not yet carry `session_stale_seconds` /
-`session_heartbeat_seconds` fields, so both are plain keyword parameters
-here with named module-level defaults, per the build instructions -- m14 is
-expected to wire them into `Knobs` and pass the resolved values through.
+`stale_seconds` / `heartbeat_seconds`: `Knobs` (m1) carries
+`session_stale_seconds` / `session_heartbeat_seconds` (defaults mirror the
+module-level ones below), and every call site already threads them through
+-- the CLI's `_session_board` and all four plugin hooks pass
+`knobs.session_stale_seconds` / `knobs.session_heartbeat_seconds`
+explicitly. `SessionBoard.__init__` also accepts an optional
+`knobs: Knobs | None`, read whenever the plain `stale_seconds` /
+`heartbeat_seconds` keyword params are left at their default (`None`) --
+so a caller with a `Knobs` in hand can pass it directly, and a caller
+without one (a test, a one-off script) can still set either value as a
+bare keyword.
 """
 
 from __future__ import annotations
@@ -51,13 +57,15 @@ from .layout import Layout
 #: Heartbeat age, in seconds, past which a session's claims stop blocking
 #: and its live file becomes sweep-eligible. Generous default: a crashed
 #: session must not wedge the fleet, but this should comfortably outlast an
-#: ordinary build/tool pause. m14 wires this to `Knobs.session_stale_seconds`.
+#: ordinary build/tool pause. Mirrors `Knobs.session_stale_seconds`'s own
+#: default -- kept here as a documented, importable constant for a caller
+#: that wants the number without constructing a `Knobs`.
 DEFAULT_STALE_SECONDS = 1800.0  # 30 minutes
 
 #: How often a live session is expected to refresh its heartbeat file.
 #: Advisory only -- `SessionBoard` does not itself run a timer; a caller
-#: (the SessionStart/hook loop, m14) polls at this cadence and calls
-#: `.heartbeat()`. m14 wires this to `Knobs.session_heartbeat_seconds`.
+#: (the SessionStart/hook loop) polls at this cadence and calls
+#: `.heartbeat()`. Mirrors `Knobs.session_heartbeat_seconds`'s own default.
 DEFAULT_HEARTBEAT_SECONDS = 120.0  # 2 minutes
 
 #: `var/sessions/live/` and `var/sessions/history/`, relative to `layout.var`.
@@ -217,8 +225,12 @@ def _default_event_log(layout: Layout) -> EventLog:
 class SessionBoard:
     """One corpus's live-session board, rooted at `layout.var/sessions/`.
 
-    `stale_seconds` / `heartbeat_seconds` are plain keyword parameters (see
-    module docstring for why `Knobs` isn't threaded through here yet).
+    `stale_seconds` / `heartbeat_seconds` are plain keyword params, `None`
+    by default; when either is left `None`, its value comes from `knobs`
+    (an explicit `Knobs`, or a fresh `Knobs()` default when `knobs` is also
+    omitted) -- so a caller holding a `Knobs` can pass it once via `knobs=`,
+    and a caller without one can still pin either value directly. A
+    non-`None` keyword always wins over `knobs` for that one field.
     `event_log`, if given, replaces the default `EventLog` derived from
     `Knobs.load(layout.root)` -- same injectable-for-test-isolation pattern
     `packer.pack` / `archive.archive_note` use.
@@ -228,13 +240,21 @@ class SessionBoard:
         self,
         layout: Layout,
         *,
-        stale_seconds: float = DEFAULT_STALE_SECONDS,
-        heartbeat_seconds: float = DEFAULT_HEARTBEAT_SECONDS,
+        stale_seconds: float | None = None,
+        heartbeat_seconds: float | None = None,
+        knobs: Knobs | None = None,
         event_log: EventLog | None = None,
     ) -> None:
         self.layout = layout
-        self.stale_seconds = float(stale_seconds)
-        self.heartbeat_seconds = float(heartbeat_seconds)
+        resolved_knobs = knobs if knobs is not None else Knobs()
+        self.stale_seconds = float(
+            stale_seconds if stale_seconds is not None else resolved_knobs.session_stale_seconds
+        )
+        self.heartbeat_seconds = float(
+            heartbeat_seconds
+            if heartbeat_seconds is not None
+            else resolved_knobs.session_heartbeat_seconds
+        )
         self._event_log = event_log if event_log is not None else _default_event_log(layout)
 
     # --- directories -----------------------------------------------------
