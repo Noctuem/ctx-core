@@ -4,8 +4,6 @@
 
 - [ ] Publish `ctx-core` 0.2.2 to PyPI (maintainer action; README quick-start
   upgrades to `pip install ctx-core` after) [2026-08-18]
-- [ ] Live composition check with a real installed `ctx-yield` (stub-tested
-  only so far) [2026-08-18]
 
 ## Medium
 
@@ -13,8 +11,6 @@
   (who submits: maintainer's call) [2026-08-18]
 - [ ] Hook upgrade path: switch .claude/hooks event append from package
   import to the `ctx` console script now that the CLI exists [2026-08-18]
-- [ ] `yield-bridge`: consider emitting an eventlog line per composition run
-  (design note in build records) [2026-08-18]
 - [ ] Claim-guard limit: Bash-issued writes are still unguarded — the guard's
   `PreToolUse` deny path stays Edit/MultiEdit/Write/NotebookEdit only; a
   reliable pre-write path signal for Bash still doesn't exist (a shell
@@ -30,32 +26,59 @@
 
 ## Low
 
-- [ ] Docs drift: `sessions.py` module docstring says `Knobs` does not yet carry the
-  session knobs / awaits m14 wiring — they exist (config.py) and every call site (CLI
-  `_session_board`, all four hooks) threads them through; fix the comment, optionally
-  let `SessionBoard.__init__` read Knobs directly [2026-08-21, state-report survey]
-- [ ] `EventKind.INIT_RUN` is defined and never emitted (`init.py` never touches the
-  log) — wire `init` to emit it (stats could report "initialized N days ago") or delete
-  it [2026-08-21, state-report survey]
-- [ ] `INTAKE_ROUTE_AGE_KEYS` hedges four key names; the emitter writes `age_days` only —
-  pin one, delete three [2026-08-21, state-report survey]
-- [ ] The engine repo is NOT a corpus instance (no core/ or notes/ trees), so "pack the
-  engine's own corpus" was mis-framed — the review pass's acceptance `ctx pack` run
-  (2026-08-21) produced the first `context_assembled` event here but had zero rankable
-  candidates. Decide: ship a small example corpus (e.g. `examples/corpus/`) that CI
-  packs as a live fixture, or retire this item [2026-08-21, amended at review-pass
-  landing]
-
-- [ ] Cosmetic: `_move_to_history`'s stamp suffix never yields the `Z` the comment
-  promises (first `.replace` already turns `+00:00` into `+0000`); files stay unique
-  and parse fine — tidy the comment or the replace chain [2026-08-20, found landing the
-  intent-recovery fix]
-
 ## Shelved
 
 ## Fleeting Ideas
 
 ## Done
+- [x] Live composition check with a real installed `ctx-yield` (stub-tested
+  only so far) [2026-08-18] — **FIXED 2026-08-21: `ctx-yield` 0.1.0 was
+  already installed and on PATH (`pip show ctx-yield`) — ran `ctx stats
+  --root examples/corpus`; `var/stats/summary.json`'s `yield` section
+  reports `ran: true`, `degraded: false`, `warning: null` (1 composition
+  run recorded) — live end-to-end composition confirmed, no `--exact` /
+  API key used**
+- [x] `yield-bridge`: consider emitting an eventlog line per composition run
+  (design note in build records) [2026-08-18] — **FIXED 2026-08-21
+  (16b2589): `yield_scan` gets an optional `event_log` param and appends
+  one `yield_scan` event per call ({ran, degraded, warning, n_entries,
+  timeout_s}) for every outcome; `compute_stats` threads its own optional
+  `event_log` through (stats is the caller) and folds a windowed
+  `yield_runs_in_window` count into the yield section**
+- [x] Docs drift: `sessions.py` module docstring says `Knobs` does not yet carry the
+  session knobs / awaits m14 wiring — they exist (config.py) and every call site (CLI
+  `_session_board`, all four hooks) threads them through; fix the comment, optionally
+  let `SessionBoard.__init__` read Knobs directly [2026-08-21, state-report survey] —
+  **FIXED 2026-08-21 (93c2c85): docstring corrected; `SessionBoard.__init__` now
+  accepts `knobs: Knobs | None` and reads `session_stale_seconds`/
+  `session_heartbeat_seconds` from it whenever the plain keyword params are left at
+  their new `None` default (an explicit keyword still wins)**
+- [x] `EventKind.INIT_RUN` is defined and never emitted (`init.py` never touches the
+  log) — wire `init` to emit it (stats could report "initialized N days ago") or delete
+  it [2026-08-21, state-report survey] — **FIXED 2026-08-21 (781db24): `run_interview`
+  emits one `INIT_RUN` event per profile write (`{customized, fields}`); `ctx stats`
+  folds the newest into `window.initialized_at` (null when absent) and renders one line**
+- [x] `INTAKE_ROUTE_AGE_KEYS` hedges four key names; the emitter writes `age_days` only —
+  pin one, delete three [2026-08-21, state-report survey] — **FIXED 2026-08-21
+  (9c815f2): pinned to `INTAKE_ROUTE_AGE_KEY = "age_days"` (the emitter's only key);
+  the other three deleted, with a regression test proving a retired key name is no
+  longer silently honored**
+- [x] The engine repo is NOT a corpus instance (no core/ or notes/ trees), so "pack the
+  engine's own corpus" was mis-framed — the review pass's acceptance `ctx pack` run
+  (2026-08-21) produced the first `context_assembled` event here but had zero rankable
+  candidates. Decide: ship a small example corpus (e.g. `examples/corpus/`) that CI
+  packs as a live fixture, or retire this item [2026-08-21, amended at review-pass
+  landing] — **FIXED 2026-08-21 (f6b9153): shipped `examples/corpus/` (fictional,
+  realistic-shaped — pinned note, decisions-tagged note, one note deliberately
+  oversized for its own small `pack_budget_tokens`); CI runs `ctx doctor`/`ctx pack`
+  against it as a live fixture distinct from the template-built scratch corpus;
+  README quick-start points to it**
+- [x] Cosmetic: `_move_to_history`'s stamp suffix never yields the `Z` the comment
+  promises (first `.replace` already turns `+00:00` into `+0000`); files stay unique
+  and parse fine — tidy the comment or the replace chain [2026-08-20, found landing the
+  intent-recovery fix] — **FIXED 2026-08-21 (4f50af0): reordered the two `.replace()`
+  calls so the stamp actually ends in `Z`; `_HISTORY_STAMP_RE` updated to match the
+  real pattern, and a test asserts the disambiguated filename fits it**
 - [x] Stats `_classify_drop_reason` misses the intake-cap reason ("unrouted intake item
   over the … cap") — it always folds into `other`; add the prefix (one line)
   [2026-08-21, state-report survey] — **FIXED 2026-08-21: `_DROP_REASON_PREFIXES` gained
