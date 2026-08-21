@@ -115,3 +115,19 @@ looking (Lexi live = the Anki app since 08-10; Isolde 08-18 features live
 since 08-18) and corrected in those repos. Hub Drift appended (`8bb4d8c`).
 Board: 3 sessions this arc, API-heartbeat loop each time, 0 expires; stats
 and doctor truthful throughout; no new engine findings.
+
+
+## Session 6 — 2026-08-20 — the four dogfood findings fixed (manager session; one Sonnet worker) — ~60K orchestrator + ~180K agent tokens
+
+Landed as four commits, tests in each, 324→345 green, hygiene grep zero:
+d2d0a8f `ctx sessions heartbeat` + automatic heartbeat from the PostToolUse
+hook (fail-open; SessionStart's one-shot was never enough for a long
+session); bcf210e re-claim after expiry recovers intent via
+`SessionBoard.last_intent` (history lookup, prefix-collision guarded);
+fa56e1b UTF-8 stdio forced in `main()` (stats em-dashes now clean on
+Windows without PYTHONUTF8 — smoke-verified); 2dc8feb `pack --budget N`
+used literally + a manifest note when the top-ranked file itself was
+dropped as oversized (the Session-5 wrong-working-set failure now announces
+itself). README command surface updated. One cosmetic finding filed Low
+(history stamp suffix never yields `Z`). VERSION 0.2.1. Board session for
+this arc claimed/heartbeated/released through the new subcommand.

@@ -15,10 +15,15 @@
   Third dogfood 2026-08-20 (Session 5): a fresh PRIVATE corpus for a non-code
   domain driven end-to-end (init/claim/intake/pack/doctor/release/stats); one
   new finding (`pack --budget`).
-- **Next:** PyPI publish, marketplace listing (TODO); fix the four dogfood
-  findings (small, all scoped in TODO Medium — heartbeat CLI, intent on
-  sweep+reclaim, Windows stdout encoding, `pack --budget` override; the last
-  from Session 5's third dogfood on a fresh non-code corpus, 2026-08-20).
+  Fourth arc 2026-08-20 (Session 6): the four dogfood findings FIXED in
+  one worker pass (324→345 tests) — `ctx sessions heartbeat` + automatic
+  heartbeat from the PostToolUse hook, intent recovered on re-claim,
+  UTF-8 stdio, `pack --budget` (literal) + oversized-top-hit note;
+  VERSION 0.2.1.
+- **Next:** PyPI publish (0.2.1 — the CLI surface is now clean for first
+  external users), marketplace listing (TODO). Open design item: cross-repo
+  claims (OQ1, board→SIA bridge) — the board is a presence signal, not a
+  claim guard, for manager sessions working other repos.
 - **Guard (PUBLIC repo):** never commit the repo owner's personal name or
   absolute local paths; author identity is Noctuem. Grep staged changes before
   every push.
