@@ -2,7 +2,7 @@
 
 ## High
 
-- [ ] Publish `ctx-core` 0.2.0 to PyPI (maintainer action; README quick-start
+- [ ] Publish `ctx-core` 0.2.1 to PyPI (maintainer action; README quick-start
   upgrades to `pip install ctx-core` after) [2026-08-18]
 - [ ] Live composition check with a real installed `ctx-yield` (stub-tested
   only so far) [2026-08-18]
