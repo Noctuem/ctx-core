@@ -562,6 +562,27 @@ def test_intake_latency_from_route_events(no_ctx_yield_on_path: None, tmp_path: 
     assert lat["mean_days"] == 1.5
 
 
+def test_intake_latency_ignores_retired_hedge_keys(no_ctx_yield_on_path: None, tmp_path: Path) -> None:
+    """`INTAKE_ROUTE_AGE_KEYS` used to hedge four candidate key names;
+    `intake_route` (the only emitter) writes `age_days` only, so the hedge
+    was pinned down to `INTAKE_ROUTE_AGE_KEY` (TODO Low, state-report
+    survey item 3). A payload carrying one of the retired names and no
+    `age_days` must read as unmeasured, not silently pick up the old key.
+    """
+    layout = Layout(tmp_path)
+    log = EventLog(default_eventlog_path(layout.root, Knobs().eventlog_path))
+    log.append(
+        INTAKE_ROUTE_KIND,
+        {"source": "user", "destination": "notes/x.md", "age_at_routing_days": 3.0},
+    )
+
+    report = compute_stats(layout, Knobs(), now=FIXED_NOW)
+
+    lat = report.intake["latency"]
+    assert lat["n_measured"] == 0
+    assert lat["n_unmeasured"] == 1
+
+
 def test_intake_latency_not_measured_when_no_route_events(no_ctx_yield_on_path: None, tmp_path: Path) -> None:
     layout = Layout(tmp_path)
 

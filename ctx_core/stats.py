@@ -127,13 +127,14 @@ INTAKE_RECEIVED_KEY = "ctx:received"
 #: `intake_add`'s own documented default (`source="user"`).
 INTAKE_DEFAULT_SOURCE = "user"
 
-#: Candidate payload keys this module checks, in order, for an
-#: `INTAKE_ROUTE` event's "age at routing" figure. The build spec's m12
-#: section says the event "carries source, age-at-routing, and
-#: destination" but does not pin an exact key name (m12 had not landed at
-#: build time) — read defensively rather than guess a single key and
-#: silently drop every event that doesn't use it.
-INTAKE_ROUTE_AGE_KEYS = ("age_days", "age_at_routing_days", "latency_days", "age_at_routing")
+#: Payload key an `INTAKE_ROUTE` event carries for its "age at routing"
+#: figure. The build spec's m12 section said the event "carries source,
+#: age-at-routing, and destination" without pinning an exact key name (m12
+#: had not landed at build time), so this module originally hedged with
+#: four candidate names; `intake.py`'s landed `intake_route` (the only
+#: emitter) writes `age_days` and nothing else — pinned to the one real
+#: key (TODO Low, state-report survey item 3, 2026-08-21).
+INTAKE_ROUTE_AGE_KEY = "age_days"
 
 #: Drop-reason prefixes this module classifies against, matching
 #: `packer.py`'s exact wording (`pack()`'s `dropped` list). A reason this
@@ -604,13 +605,11 @@ def _fold_intake(layout: Layout, windowed: list[dict], effective_now: float) -> 
     for e in route_events:
         payload = e.get("payload", {})
         value = None
-        for key in INTAKE_ROUTE_AGE_KEYS:
-            if key in payload:
-                try:
-                    value = float(payload[key])
-                except (TypeError, ValueError):
-                    value = None
-                break
+        if INTAKE_ROUTE_AGE_KEY in payload:
+            try:
+                value = float(payload[INTAKE_ROUTE_AGE_KEY])
+            except (TypeError, ValueError):
+                value = None
         if value is None:
             n_unmeasured += 1
         else:
