@@ -566,6 +566,52 @@ def test_stats_since_flag_overrides_the_knob_default(
     assert summary["window"]["since_days"] == 3
 
 
+# --- UTF-8 stdio (TODO Medium: Windows cp1252 mojibake) --------------------
+
+
+class _StreamWithoutReconfigure:
+    """A minimal writable stream with no `.reconfigure` -- stands in for
+    an older Python, or any file-like object that doesn't offer it.
+    `main()` must tolerate this rather than crash on `AttributeError`."""
+
+    def __init__(self) -> None:
+        self.written: list[str] = []
+
+    def write(self, s: str) -> int:
+        self.written.append(s)
+        return len(s)
+
+    def flush(self) -> None:
+        pass
+
+
+def test_main_does_not_crash_when_stdio_lacks_reconfigure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(sys, "stdout", _StreamWithoutReconfigure())
+    monkeypatch.setattr(sys, "stderr", _StreamWithoutReconfigure())
+
+    result = main([])  # no subcommand -- prints help, returns EXIT_ERROR
+
+    assert result == EXIT_ERROR
+
+
+def test_main_reconfigures_stdio_to_utf8_when_available(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from unittest.mock import MagicMock
+
+    fake_out = MagicMock()
+    fake_err = MagicMock()
+    monkeypatch.setattr(sys, "stdout", fake_out)
+    monkeypatch.setattr(sys, "stderr", fake_err)
+
+    main([])
+
+    fake_out.reconfigure.assert_called_once_with(encoding="utf-8", errors="replace")
+    fake_err.reconfigure.assert_called_once_with(encoding="utf-8", errors="replace")
+
+
 # --- graceful interrupt -------------------------------------------------
 
 

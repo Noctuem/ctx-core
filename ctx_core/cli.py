@@ -560,11 +560,31 @@ def build_parser() -> argparse.ArgumentParser:
 # --- entry point -------------------------------------------------------
 
 
+def _force_utf8_stdio() -> None:
+    """Force UTF-8 on stdout/stderr where the stream supports it, so `ctx
+    stats`'s markdown (em-dashes and friends) doesn't come out as `?`
+    mojibake under Windows' default cp1252 console encoding (clean under
+    `PYTHONUTF8=1`, but that shouldn't be a precondition for correct
+    output). `errors="replace"` rather than crashing on a genuinely
+    unencodable byte the target console can't display at all. Best-effort:
+    a stream without `.reconfigure` (older Python, a test double, a
+    non-TextIOWrapper) is left alone rather than raising.
+    """
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if callable(reconfigure):
+            try:
+                reconfigure(encoding="utf-8", errors="replace")
+            except Exception:
+                pass
+
+
 def main(argv: list[str] | None = None) -> int:
     """The `ctx` entry point. Returns a process exit code; never raises
     on a plain Ctrl-C (`KeyboardInterrupt` in, `EXIT_INTERRUPTED` out, no
     traceback).
     """
+    _force_utf8_stdio()
     try:
         parser = build_parser()
         args = parser.parse_args(argv)
