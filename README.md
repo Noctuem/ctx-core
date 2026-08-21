@@ -156,6 +156,12 @@ ctx pack "a task" --report
 If `ctx-yield` isn't installed, `--report` prints a short notice and exits `0` — it
 never fails your pipeline for a missing optional tool.
 
+**Token counts are estimated, not exact.** Every budget ctx-core checks against
+(`pack_budget_tokens`, `--budget N`, `core_budget_tokens`) is measured with
+`approx_tokens = len(text) // 4` (`ctx_core/indexing.py`) — a cheap heuristic, not a
+real tokenizer, and it can drift 20-30% from an actual token count. `ctx-yield
+--exact` above is the precise path when that drift matters.
+
 ## Secrets
 
 **ctx-core itself needs none.** The only credential anywhere in this stack is
@@ -189,7 +195,11 @@ and tested, with 203 tests passing in a CI matrix across Linux and Windows on Py
 Version 0.2.0 adds the live-session board (`ctx sessions`), the New-layer intake
 front door (`ctx intake`), and the zero-token stats pipeline (`ctx stats` + the
 `ctx-analyze` skill), plus three new `ctx doctor` checks and two new plugin hooks
-(a `SessionStart` board hook and a fail-open `PreToolUse` claim guard) — 321 tests
+(a `SessionStart` board hook and a fail-open `PreToolUse` claim guard).
+
+Version 0.2.1 adds `ctx sessions heartbeat`, automatic session heartbeat from the
+plugin's `PostToolUse` hook, intent recovery on session re-claim, forced UTF-8
+stdio, and `ctx pack --budget N` (a literal per-invocation override) — 345 tests
 passing locally, both suite tiers. PyPI publication and the plugin-marketplace
 listing (see `docs/ADOPTION.md` for the checklist) are still the next iteration
 targets.
