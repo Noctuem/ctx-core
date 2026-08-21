@@ -253,7 +253,14 @@ def _cmd_sessions_claim(args: argparse.Namespace) -> int:
         # command surface (spec: `ctx sessions list|claim|release`), so an
         # unknown session_id is registered here, using `--intent` if given,
         # rather than making a manual claim a two-step operation.
-        board.register(args.session_id, args.intent)
+        #
+        # `--intent` empty/omitted: this is very often not a brand-new
+        # session but a swept-then-reclaimed one (TODO Medium finding --
+        # the sweep+reclaim path used to silently drop the session's
+        # recorded intent). Recover it from the newest matching history
+        # record before falling back to a blank intent.
+        intent = args.intent or board.last_intent(args.session_id) or ""
+        board.register(args.session_id, intent)
         board.claim(args.session_id, args.paths)
     print(f"'{args.session_id}' claims: {', '.join(args.paths)}")
     return EXIT_OK

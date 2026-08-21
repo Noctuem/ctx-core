@@ -79,6 +79,18 @@ SESSION_EXPIRE = "session_expire"
 _SESSION_ID_RE = re.compile(r"^[A-Za-z0-9_.-]+$")
 _RESERVED_SESSION_IDS = {".", ".."}
 
+#: Matches the `-{stamp}` suffix `_move_to_history` appends on a same-id
+#: collision (see its docstring): `<session_id>-YYYY-MM-DDTHHMMSS.ffffff+0000`.
+#: Note the trailing `+0000`, not `Z` -- `_move_to_history`'s
+#: `.replace(":", "").replace("+00:00", "Z")` strips the colon out of
+#: `+00:00` first (`_utc_now_iso()` always carries that literal UTC
+#: offset), so the second `.replace` never finds its target; this matches
+#: the stamp as it's actually written, not as the docstring there implies.
+#: `last_intent()` uses this to tell a repeat-ending's history file
+#: (`<id>-<stamp>.json`) apart from a DIFFERENT session id that merely
+#: starts with `<id>-` (e.g. `last_intent("a")` must not match `a-b.json`).
+_HISTORY_STAMP_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{6}\.\d+\+\d{4}$")
+
 
 class SessionNotFoundError(LookupError):
     """Raised when a method addressing an existing live session
@@ -397,6 +409,50 @@ class SessionBoard:
                 "claims": data.get("claims", []),
             },
         )
+
+    def last_intent(self, session_id: str) -> str | None:
+        """The `intent` recorded in the NEWEST history record for
+        `session_id` (by `ended_at`), or `None` if `session_id` has never
+        ended (no history record at all -- brand new, or still live).
+
+        History holds one file per ending: `<session_id>.json` for the
+        first, `<session_id>-<stamp>.json` for every repeat (see
+        `_move_to_history`). Both are considered; the stamp suffix is
+        matched structurally (`_HISTORY_STAMP_RE`), not by string prefix,
+        so a different session id that happens to start with
+        `<session_id>-` is never mistaken for a repeat ending of this one.
+
+        Exists so a caller (`ctx sessions claim`'s re-register-on-expiry
+        path) can recover a swept session's intent without the CLI reaching
+        into `history_dir` layout itself.
+        """
+        _validate_session_id(session_id)
+        if not self.history_dir.is_dir():
+            return None
+
+        candidates: list[Path] = []
+        exact = self.history_dir / f"{session_id}.json"
+        if exact.is_file():
+            candidates.append(exact)
+        prefix = f"{session_id}-"
+        for path in self.history_dir.glob(f"{session_id}-*.json"):
+            suffix = path.stem[len(prefix):]
+            if _HISTORY_STAMP_RE.fullmatch(suffix):
+                candidates.append(path)
+        if not candidates:
+            return None
+
+        newest_data: dict | None = None
+        newest_ended_at = ""
+        for path in candidates:
+            data = self._read_session_file(path)
+            if data is None:
+                continue
+            ended_at = data.get("ended_at", "")
+            if newest_data is None or ended_at >= newest_ended_at:
+                newest_ended_at = ended_at
+                newest_data = data
+        return newest_data.get("intent") if newest_data is not None else None
 
     def list(self) -> list[SessionEntry]:
         """Every session that was live at the start of this call: entries

@@ -366,6 +366,103 @@ def test_sessions_heartbeat_refreshes_a_claimed_session(
     assert after >= before
 
 
+def test_sessions_claim_after_expiry_recovers_recorded_intent(
+    tmp_path: Path, capsys: pytest.CaptureFixture
+) -> None:
+    """The sweep+reclaim finding: a session claims with an intent, its
+    heartbeat goes stale and gets swept, and a later `claim` on the same
+    session_id with no `--intent` must recover the intent it had rather
+    than silently registering it blank."""
+    root = _fresh_corpus(tmp_path)
+    knobs_path = root / ".ctxrc.toml"
+    knobs_path.write_text("session_stale_seconds = 0.01\n", encoding="utf-8")
+
+    main(
+        [
+            "sessions",
+            "claim",
+            "sess-4",
+            "notes/x",
+            "--intent",
+            "a real intent worth keeping",
+            "--root",
+            str(root),
+        ]
+    )
+    capsys.readouterr()
+
+    import time
+
+    time.sleep(0.05)  # older than session_stale_seconds -- goes stale
+
+    # something else drives the sweep first (claim's own sweep excludes
+    # its own session_id, so a bare re-claim wouldn't trigger it) -- a
+    # `list` call, another session's activity, or a scheduled sweep all
+    # do this in practice; `list` is the simplest to drive here.
+    main(["sessions", "list", "--root", str(root)])
+    capsys.readouterr()
+    assert not (Layout(root).var / "sessions" / "live" / "sess-4.json").exists()
+
+    # re-claim without --intent -- the session_id is gone from live/ by now
+    result = main(["sessions", "claim", "sess-4", "notes/x", "--root", str(root)])
+    assert result == EXIT_OK
+    capsys.readouterr()
+
+    list_result = main(["sessions", "list", "--root", str(root)])
+    assert list_result == EXIT_OK
+    out = capsys.readouterr().out
+    assert "a real intent worth keeping" in out
+
+
+def test_sessions_claim_explicit_intent_still_wins_over_recovered_one(
+    tmp_path: Path, capsys: pytest.CaptureFixture
+) -> None:
+    root = _fresh_corpus(tmp_path)
+    knobs_path = root / ".ctxrc.toml"
+    knobs_path.write_text("session_stale_seconds = 0.01\n", encoding="utf-8")
+
+    main(
+        [
+            "sessions",
+            "claim",
+            "sess-5",
+            "notes/x",
+            "--intent",
+            "the old intent",
+            "--root",
+            str(root),
+        ]
+    )
+    capsys.readouterr()
+
+    import time
+
+    time.sleep(0.05)
+
+    main(["sessions", "list", "--root", str(root)])  # drives the sweep
+    capsys.readouterr()
+
+    result = main(
+        [
+            "sessions",
+            "claim",
+            "sess-5",
+            "notes/x",
+            "--intent",
+            "a brand new intent",
+            "--root",
+            str(root),
+        ]
+    )
+    assert result == EXIT_OK
+    capsys.readouterr()
+
+    list_result = main(["sessions", "list", "--root", str(root)])
+    out = capsys.readouterr().out
+    assert "a brand new intent" in out
+    assert "the old intent" not in out
+
+
 def test_sessions_heartbeat_unknown_session_reports_error(
     tmp_path: Path, capsys: pytest.CaptureFixture
 ) -> None:

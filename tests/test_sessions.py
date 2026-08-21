@@ -237,6 +237,65 @@ def test_history_collision_gets_disambiguated_not_overwritten(tmp_path: Path) ->
 
 
 # ==========================================================================
+# last_intent
+# ==========================================================================
+
+
+def test_last_intent_none_when_never_ended(tmp_path: Path) -> None:
+    board, _ = _board(tmp_path)
+    assert board.last_intent("never-existed") is None
+
+    board.register("s1", "still live")
+    assert board.last_intent("s1") is None  # never ended -- no history yet
+
+
+def test_last_intent_returns_the_single_history_record(tmp_path: Path) -> None:
+    board, _ = _board(tmp_path)
+    board.register("s1", "build the sessions module")
+    board.release("s1")
+
+    assert board.last_intent("s1") == "build the sessions module"
+
+
+def test_last_intent_returns_the_newest_of_several_endings(tmp_path: Path) -> None:
+    board, _ = _board(tmp_path)
+    board.register("s1", "first run")
+    board.release("s1")
+    time.sleep(0.01)
+    board.register("s1", "second run")
+    board.release("s1")
+    time.sleep(0.01)
+    board.register("s1", "third run")
+    board.release("s1")
+
+    assert board.last_intent("s1") == "third run"
+
+
+def test_last_intent_recovers_after_expiry(tmp_path: Path) -> None:
+    """The sweep+reclaim scenario the CLI fix targets: a session expires
+    (not a graceful release), and `last_intent` still finds it."""
+    board, _ = _board(tmp_path, stale_seconds=0.01)
+    board.register("s1", "a genuinely active session")
+    time.sleep(0.05)
+    board.list()  # triggers the sweep -> moved to history as "expired"
+
+    assert board.last_intent("s1") == "a genuinely active session"
+
+
+def test_last_intent_does_not_confuse_a_different_session_with_a_shared_prefix(
+    tmp_path: Path,
+) -> None:
+    """`last_intent("a")` must not match `a-b.json` (a real, different
+    session id `a-b`, not a repeat ending of `a`) -- the stamp-suffix
+    match is structural, not a string prefix."""
+    board, _ = _board(tmp_path)
+    board.register("a-b", "an unrelated session that happens to share a prefix")
+    board.release("a-b")
+
+    assert board.last_intent("a") is None
+
+
+# ==========================================================================
 # claim overlap semantics + check()
 # ==========================================================================
 
