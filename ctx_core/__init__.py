@@ -7,6 +7,6 @@ architecture (force-loaded core/, on-demand notes/, runtime var/) and the
 
 from __future__ import annotations
 
-__version__ = "0.2.1"
+__version__ = "0.2.2"
 
 __all__ = ["__version__"]

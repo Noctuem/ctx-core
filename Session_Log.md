@@ -131,3 +131,28 @@ dropped as oversized (the Session-5 wrong-working-set failure now announces
 itself). README command surface updated. One cosmetic finding filed Low
 (history stamp suffix never yields `Z`). VERSION 0.2.1. Board session for
 this arc claimed/heartbeated/released through the new subcommand.
+
+
+## Session 7 — 2026-08-21 — external-review worker brief landed; state report published; forge draft staged — ~90K orchestrator + ~410K agent tokens
+
+State report "ctx-core at 0.2.1" authored from a fresh code survey (published
+artifact + PDF); the survey itself surfaced five small items (filed Low). Then
+noctuem handed two files: a six-item worker brief from an external review, and
+the forge v0.1 draft (autonomous build loop over ctx-core). Brief landed by one
+Sonnet worker in five commits, 345→360 green, hygiene zero: d0a24ec distinct
+age-gate drop reason + `age_gated`/`intake_cap` stats labels (fixture manifest
+updated); 646f76f age-gate exemption checks unpadded coverage so 1–2-term
+tasks can clear 0.75; 0cfb302 `core_budget_tokens` (None → resolves to
+pack_budget_tokens at check time; doctor message names it); 4af6c8e README
+status + token-estimator caveat (quick-start NOT flipped — PyPI publish hasn't
+happened); bfa9446 Bash claim-overlap advisory in the PostToolUse hook —
+observe-only, ≤50 stats, one `claim_overlap_observed` per (session, path),
+fail-open incl. corrupt log, surfaced in stats' Sessions line; TODO Medium item
+amended not ticked (the guard gap stays open by design). Acceptance `ctx pack`
+run gave this repo its first `context_assembled` event but had zero rankable
+candidates — the engine repo has no core/notes trees; TODO item re-framed
+(example corpus vs retire). Report's doctor arithmetic fixed (3 hard + 4 soft +
+1 escalating), republished. forge draft staged at hub
+notes/projects/specs/new/_proposed/forge.spec.md with map line (hub 55d3800);
+both inbox files handled from a tmp spot, never staged, deleted after. VERSION
+0.2.2.

@@ -20,10 +20,17 @@
   heartbeat from the PostToolUse hook, intent recovered on re-claim,
   UTF-8 stdio, `pack --budget` (literal) + oversized-top-hit note;
   VERSION 0.2.1.
-- **Next:** PyPI publish (0.2.1 — the CLI surface is now clean for first
-  external users), marketplace listing (TODO). Open design item: cross-repo
-  claims (OQ1, board→SIA bridge) — the board is a presence signal, not a
-  claim guard, for manager sessions working other repos.
+  Fifth arc 2026-08-21 (Session 7): the external review's six-item worker
+  brief landed in one pass (345→360 tests) — distinct age-gate drop reason +
+  stats labels, age-gate exemption reachable for 1–2-term tasks (unpadded
+  coverage), `core_budget_tokens` knob un-conflating doctor's L1 ceiling,
+  README status/estimator line, and a Bash claim-overlap ADVISORY in the
+  PostToolUse hook (observe-only; the guard's deny path stays singular);
+  VERSION 0.2.2.
+- **Next:** PyPI publish (0.2.2), marketplace listing (TODO). Open design
+  item: cross-repo claims (OQ1, board→SIA bridge) — now also load-bearing for
+  the staged forge draft (hub `_proposed/forge.spec.md`) the moment it runs
+  parallel builders. Decide whether this repo ships an example corpus (TODO Low).
 - **Guard (PUBLIC repo):** never commit the repo owner's personal name or
   absolute local paths; author identity is Noctuem. Grep staged changes before
   every push.

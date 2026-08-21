@@ -2,7 +2,7 @@
 
 ## High
 
-- [ ] Publish `ctx-core` 0.2.1 to PyPI (maintainer action; README quick-start
+- [ ] Publish `ctx-core` 0.2.2 to PyPI (maintainer action; README quick-start
   upgrades to `pip install ctx-core` after) [2026-08-18]
 - [ ] Live composition check with a real installed `ctx-yield` (stub-tested
   only so far) [2026-08-18]
@@ -39,9 +39,12 @@
   it [2026-08-21, state-report survey]
 - [ ] `INTAKE_ROUTE_AGE_KEYS` hedges four key names; the emitter writes `age_days` only —
   pin one, delete three [2026-08-21, state-report survey]
-- [ ] Pack the engine's own corpus once so this repo's stats products stop reporting an
-  empty packs section (0 `context_assembled` in its own log) and the index-freshness
-  check has a baseline [2026-08-21, state-report survey]
+- [ ] The engine repo is NOT a corpus instance (no core/ or notes/ trees), so "pack the
+  engine's own corpus" was mis-framed — the review pass's acceptance `ctx pack` run
+  (2026-08-21) produced the first `context_assembled` event here but had zero rankable
+  candidates. Decide: ship a small example corpus (e.g. `examples/corpus/`) that CI
+  packs as a live fixture, or retire this item [2026-08-21, amended at review-pass
+  landing]
 
 - [ ] Cosmetic: `_move_to_history`'s stamp suffix never yields the `Z` the comment
   promises (first `.replace` already turns `+00:00` into `+0000`); files stay unique
