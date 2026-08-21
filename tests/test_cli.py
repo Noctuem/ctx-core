@@ -137,6 +137,31 @@ def test_pack_prints_a_manifest(tmp_path: Path, capsys: pytest.CaptureFixture) -
     assert "gardening.md" in out
 
 
+def test_pack_budget_flag_overrides_the_knob(
+    tmp_path: Path, capsys: pytest.CaptureFixture
+) -> None:
+    root = _fresh_corpus(tmp_path)
+
+    result = main(["pack", "a task", "--root", str(root), "--budget", "111"])
+
+    assert result == EXIT_OK
+    assert "ctx:budget_tokens: 111" in capsys.readouterr().out
+
+
+def test_pack_note_when_top_ranked_candidate_is_oversized(
+    tmp_path: Path, capsys: pytest.CaptureFixture
+) -> None:
+    root = _fresh_corpus(tmp_path)
+    _add_note(root, "notes/huge.md", "compost kitchen scraps " * 200)
+
+    result = main(
+        ["pack", "compost kitchen scraps", "--root", str(root), "--budget", "50"]
+    )
+
+    assert result == EXIT_OK
+    assert "did not fit" in capsys.readouterr().out
+
+
 def test_pack_report_warns_when_ctx_yield_not_installed(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
 ) -> None:

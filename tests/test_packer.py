@@ -31,6 +31,7 @@ from ctx_core.packer import (
     MAX_ITEM_AGE_DAYS,
     PATH_LITERAL_MIN_STEM,
     PATH_LITERAL_WEIGHT,
+    SUMMARY_BUDGET_FRAC,
     Manifest,
     _named_for_admission,
     _named_literally,
@@ -383,6 +384,55 @@ def test_explicit_false_cannot_override_a_true_default_knob(
     assert manifest.budget_tokens < 1000  # the knob still won
 
 
+def test_budget_override_is_used_literally(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    _freeze_time(monkeypatch)
+    layout = Layout(tmp_path)
+    knobs = Knobs(pack_budget_tokens=1000)
+
+    manifest = pack(
+        "anything", layout, knobs, budget=250, event_log=EventLog(tmp_path / "events.jsonl")
+    )
+
+    assert manifest.budget_tokens == 250
+
+
+def test_budget_override_with_summary_is_literal_not_scaled(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An explicit `--budget N` means exactly N, even under `--summary` --
+    `SUMMARY_BUDGET_FRAC` only ever scales the knob-derived default."""
+    _freeze_time(monkeypatch)
+    layout = Layout(tmp_path)
+    knobs = Knobs(pack_budget_tokens=1000)
+
+    manifest = pack(
+        "anything",
+        layout,
+        knobs,
+        summary=True,
+        budget=250,
+        event_log=EventLog(tmp_path / "events.jsonl"),
+    )
+
+    assert manifest.budget_tokens == 250
+
+
+def test_budget_omitted_falls_back_to_the_knob(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _freeze_time(monkeypatch)
+    layout = Layout(tmp_path)
+    knobs = Knobs(pack_budget_tokens=1000)
+
+    full = pack("anything", layout, knobs, event_log=EventLog(tmp_path / "e1.jsonl"))
+    assert full.budget_tokens == 1000
+
+    short = pack(
+        "anything", layout, knobs, summary=True, event_log=EventLog(tmp_path / "e2.jsonl")
+    )
+    assert short.budget_tokens == int(1000 * SUMMARY_BUDGET_FRAC)  # unchanged behavior
+
+
 # ==========================================================================
 # Budgeting / dedup mechanics in isolation
 # ==========================================================================
@@ -400,6 +450,79 @@ def test_oversized_entry_dropped_with_named_reason(tmp_path: Path, monkeypatch: 
     reason = dict((e.path, r) for e, r in manifest.dropped)["notes/huge.md"]
     assert "larger than the whole working budget" in reason
     assert not any(e.path == "notes/huge.md" for e in manifest.entries)
+
+
+def test_top_oversized_note_present_when_the_best_match_is_dropped_for_size(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The dogfooding finding: a corpus can pack to 100% fill on
+    low-relevance filler while the single best-matching note -- itself
+    oversized -- silently never made it in. `top_oversized` (and its
+    rendered note) is how the manifest says so."""
+    _freeze_time(monkeypatch)
+    layout = Layout(tmp_path)
+    _write(layout.notes / "huge-best-match.md", "compost kitchen scraps " * 2000)
+    _age(layout.notes / "huge-best-match.md", 1)
+    _write(layout.notes / "filler.md", "gardening notes about something else entirely")
+    _age(layout.notes / "filler.md", 1)
+    knobs = Knobs(pack_budget_tokens=200)
+
+    manifest = pack(
+        "compost kitchen scraps",
+        layout,
+        knobs,
+        event_log=EventLog(tmp_path / "events.jsonl"),
+    )
+
+    assert manifest.top_oversized is not None
+    assert manifest.top_oversized.path == "notes/huge-best-match.md"
+    rendered = manifest.render()
+    assert "did not fit" in rendered
+    assert "notes/huge-best-match.md" in rendered.split("| file |")[0]  # the note, not the table
+
+
+def test_top_oversized_note_absent_when_the_best_match_fits(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _freeze_time(monkeypatch)
+    layout = Layout(tmp_path)
+    _write(layout.notes / "small.md", "compost kitchen scraps efficiently")
+    _age(layout.notes / "small.md", 1)
+    knobs = Knobs(pack_budget_tokens=8000)
+
+    manifest = pack(
+        "compost kitchen scraps",
+        layout,
+        knobs,
+        event_log=EventLog(tmp_path / "events.jsonl"),
+    )
+
+    assert manifest.top_oversized is None
+    assert "did not fit" not in manifest.render()
+
+
+def test_top_oversized_note_absent_when_nothing_is_oversized_but_something_is_dropped(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An ordinary over-budget drop (fits alone, just loses out to a
+    tighter pack) must not be mistaken for the oversized-top-hit case."""
+    _freeze_time(monkeypatch)
+    layout = Layout(tmp_path)
+    _write(layout.notes / "a.md", "compost kitchen scraps " * 50)
+    _age(layout.notes / "a.md", 1)
+    _write(layout.notes / "b.md", "compost kitchen scraps " * 50)
+    _age(layout.notes / "b.md", 1)
+    knobs = Knobs(pack_budget_tokens=350)  # room for one of the two, neither is oversized alone
+
+    manifest = pack(
+        "compost kitchen scraps",
+        layout,
+        knobs,
+        event_log=EventLog(tmp_path / "events.jsonl"),
+    )
+
+    assert manifest.top_oversized is None
+    assert "did not fit" not in manifest.render()
 
 
 def test_always_include_root_file_over_cap_gets_generic_drop_wording(

@@ -255,6 +255,14 @@ class Manifest:
     #: Reported, never swallowed — a manifest that quietly dropped files
     #: should not read the same as a corpus that genuinely has few.
     census: dict[str, int] = field(default_factory=dict)
+    #: Set when the single best-matching candidate (by the same score()
+    #: ranking that decides admission order) was itself dropped for being
+    #: larger than the whole working budget — a corpus like this can pack
+    #: to 100% fill on low-relevance filler while the note the task
+    #: actually needed never made it in, and a bare fill percentage reads
+    #: as healthy. `render()` surfaces this as an explicit warning. `None`
+    #: in the ordinary case (no candidate, or the top one fit).
+    top_oversized: Entry | None = None
 
     @property
     def fill(self) -> float:
@@ -279,6 +287,18 @@ class Manifest:
             "",
             f"{len(self.entries)} files, {self.total_tokens:,} tokens "
             f"({self.fill:.0%} of budget). Load these and only these.",
+        ]
+        if self.top_oversized is not None:
+            lines += [
+                "",
+                f"**Note:** the best-matching file for this task, "
+                f"`{self.top_oversized.path}` ({self.top_oversized.tokens:,} tokens), "
+                f"did not fit the {self.budget_tokens:,}-token budget and was dropped "
+                "-- this manifest may be full of lower-relevance filler instead of "
+                "the file the task actually needed. Raise `--budget`, or split the "
+                "note.",
+            ]
+        lines += [
             "",
             "| file | tokens | age | why |",
             "|---|---|---|---|",
@@ -320,6 +340,7 @@ def pack(
     summary: bool = False,
     last: int | None = None,
     decisions: bool = False,
+    budget: int | None = None,
     event_log: EventLog | None = None,
 ) -> Manifest:
     """Score, dedupe, budget — and log. Rebuilds the index from the
@@ -334,6 +355,13 @@ def pack(
       (bounded by `ALWAYS_INCLUDE_MAX_TOKENS`, same as a pinned note).
     - `decisions` admits every entry that looks like a decision record
       (see `_is_decision_entry`) off the top, on the same terms.
+    - `budget=N`, when given, OVERRIDES `knobs.pack_budget_tokens` for this
+      call and is used LITERALLY — `N` means exactly `N` tokens, even
+      together with `summary=True`. `summary`'s `SUMMARY_BUDGET_FRAC`
+      scaling only ever applies to the knob-derived default; an explicit
+      number from a caller (`ctx pack --budget N`) is not a knob to be
+      further adjusted. Omitted (`None`, the default): unchanged
+      knob/`--summary` behavior.
 
     Independently of these CLI-driven flags, an always-on admission
     modifier surfaces every unrouted New-layer note (`notes/intake/`,
@@ -372,9 +400,14 @@ def pack(
 
     entries, census = build_index(layout)
 
-    budget = int(knobs.pack_budget_tokens)
-    if summary:
-        budget = int(budget * SUMMARY_BUDGET_FRAC)
+    if budget is not None:
+        # Explicit override -- literal, never scaled by SUMMARY_BUDGET_FRAC
+        # even under --summary (see the docstring's `budget` paragraph).
+        working_budget = int(budget)
+    else:
+        working_budget = int(knobs.pack_budget_tokens)
+        if summary:
+            working_budget = int(working_budget * SUMMARY_BUDGET_FRAC)
 
     q = set(_terms(task, 30))
     mentions = _task_mentions(task)
@@ -446,9 +479,29 @@ def pack(
     # budget can be packed by any ranking. Reported as its own drop reason
     # rather than folded into the ordinary cutoff message, so a worker
     # reading it does not go looking for a scoring bug.
-    oversized = [e for e in pool if e.tokens > budget]
+    #
+    # The single best-matching candidate is identified BEFORE oversized
+    # entries are removed -- ranked the same way admission ultimately ranks
+    # (score(), rel_cutoff derived from this same pre-filter pool) -- so a
+    # manifest that ends up 100%-full of low-relevance filler can still say
+    # honestly whether the file the task actually wanted was itself the one
+    # dropped as oversized (`Manifest.top_oversized`, dogfooding finding:
+    # a truthful manifest that packed the wrong working set).
+    top_candidate: Entry | None = None
+    if pool:
+        pre_top_rel = max(e.relevance for e in pool)
+        pre_rel_cutoff = FRESH_BULK_MAX_RELEVANCE_FRAC * pre_top_rel
+        top_candidate = max(pool, key=lambda e: score(e, pre_rel_cutoff))
+
+    oversized = [e for e in pool if e.tokens > working_budget]
+    oversized_ids = {id(e) for e in oversized}
+    top_oversized = (
+        top_candidate
+        if top_candidate is not None and id(top_candidate) in oversized_ids
+        else None
+    )
     if oversized:
-        pool = [e for e in pool if e.tokens <= budget]
+        pool = [e for e in pool if e.tokens <= working_budget]
 
     top_rel = max((e.relevance for e in pool), default=0.0)
     rel_cutoff = FRESH_BULK_MAX_RELEVANCE_FRAC * top_rel
@@ -459,7 +512,7 @@ def pack(
     dropped: list[tuple[Entry, str]] = [
         (
             e,
-            f"larger than the whole working budget ({e.tokens:,} tok vs {budget:,}) "
+            f"larger than the whole working budget ({e.tokens:,} tok vs {working_budget:,}) "
             "— no ranking could pack it",
         )
         for e in oversized
@@ -474,8 +527,10 @@ def pack(
             dropped.append((e, "near-duplicate of an included file"))
             accounted.add(id(e))
             continue
-        if total + e.tokens > budget:
-            dropped.append((e, f"over budget ({e.tokens:,} tok, {budget - total:,} remaining)"))
+        if total + e.tokens > working_budget:
+            dropped.append(
+                (e, f"over budget ({e.tokens:,} tok, {working_budget - total:,} remaining)")
+            )
             accounted.add(id(e))
             continue
         chosen.append(e)
@@ -509,9 +564,10 @@ def pack(
         task=task,
         entries=chosen,
         dropped=dropped,
-        budget_tokens=budget,
+        budget_tokens=working_budget,
         total_tokens=total,
         census=census,
+        top_oversized=top_oversized,
     )
 
     log = event_log if event_log is not None else EventLog(default_eventlog_path(layout.root, knobs.eventlog_path))
@@ -520,7 +576,7 @@ def pack(
         {
             "task": task,
             "config_hash": _knobs_fingerprint(knobs),
-            "budget_tokens": budget,
+            "budget_tokens": working_budget,
             "total_tokens": total,
             "n_candidates": len(entries),
             "n_dropped": len(dropped),

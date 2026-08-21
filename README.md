@@ -79,13 +79,13 @@ ctx doctor
 ## Command surface
 
 ```
-ctx pack "<task>" [--summary] [--last N] [--decisions] [--report]
+ctx pack "<task>" [--summary] [--last N] [--decisions] [--budget N] [--report]
 ctx doctor
 ctx archive sweep
 ctx archive stub <path>
 ctx init [--answers FILE]
 ctx domains list | register <name> <path> | forget <name>
-ctx sessions list | claim <session-id> <path>... [--intent TEXT] | release <session-id>
+ctx sessions list | claim <session-id> <path>... [--intent TEXT] | release <session-id> | heartbeat <session-id>
 ctx intake add "<text>" [--source user|project|research] [--title T]
 ctx intake route <item> --to core|notes[/<subpath>]|archive
 ctx intake list

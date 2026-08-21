@@ -101,6 +101,7 @@ def _cmd_pack(args: argparse.Namespace) -> int:
         summary=args.summary,
         last=args.last,
         decisions=args.decisions,
+        budget=args.budget,
     )
     print(manifest.render(), end="")
     if args.report:
@@ -382,6 +383,17 @@ def build_parser() -> argparse.ArgumentParser:
         "--decisions",
         action="store_true",
         help="Also admit every decision-record entry.",
+    )
+    pack_parser.add_argument(
+        "--budget",
+        type=int,
+        default=None,
+        metavar="N",
+        help=(
+            "Override the working budget in tokens for this pack only, used "
+            "LITERALLY -- not scaled by --summary. Omitted: knob default "
+            "(scaled by --summary as usual)."
+        ),
     )
     pack_parser.add_argument(
         "--report",
