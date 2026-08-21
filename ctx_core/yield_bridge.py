@@ -15,6 +15,17 @@ something `yield_scan` cannot make sense of (unparseable stdout, JSON
 missing the fields this module reads) is a THIRD, equally explicit
 outcome — see `YieldResult.warning` — distinct from both "not installed"
 and a clean "installed, nothing to report" result.
+
+`yield_scan`'s optional `event_log` param (TODO Medium, "yield-bridge:
+consider emitting an eventlog line per composition run") appends exactly
+one `YIELD_SCAN_KIND` event per call, whenever a log is given — one of
+every outcome above (not installed, timed out, degraded, or clean/
+findings), never conditionally skipped for some of them. `stats.py` is the
+intended caller: `compute_stats`'s own optional `event_log` threads
+through to here, so `ctx stats` logs its own composition run for a later
+`ctx stats` to fold into a windowed `yield_runs` count. `event_log=None`
+(the default, and every direct caller in this codebase except `stats.py`)
+emits nothing — this module never assumes a log exists.
 """
 
 from __future__ import annotations
@@ -28,6 +39,7 @@ from dataclasses import dataclass, field
 from typing import Any, Sequence
 
 from .config import Knobs
+from .events import EventLog
 from .indexing import Entry
 from .layout import Layout
 
@@ -36,6 +48,12 @@ from .layout import Layout
 #: The binary `shutil.which` looks for. `ctx-yield`'s own installer
 #: (`pyproject.toml` `[project.scripts]`) is what puts this on PATH.
 YIELD_BINARY_NAME = "ctx-yield"
+
+#: `kind` `yield_scan` appends when given an `event_log` (TODO Medium item).
+#: `EventKind` (m5, frozen 0.1.0) doesn't own this vocabulary -- same plain-
+#: string convention `sessions.py`/`intake.py` use for their own event
+#: kinds; `stats.py` reads it back by this exact string.
+YIELD_SCAN_KIND = "yield_scan"
 
 #: Ceiling on how long one `ctx-yield scan` subprocess is allowed to run
 #: before `yield_scan` gives up and reports a timeout outcome. A scan reads
@@ -205,8 +223,41 @@ def _parse_report(stdout: str) -> YieldResult:
     return YieldResult(entries=entries, raw=report)
 
 
+def _emit_yield_scan_event(
+    event_log: EventLog | None,
+    *,
+    ran: bool,
+    degraded: bool,
+    warning: str | None,
+    n_entries: int,
+    timeout_s: float,
+) -> None:
+    """Append one `YIELD_SCAN_KIND` event, or do nothing when `event_log`
+    is `None`. `ran` distinguishes "not installed" (`False`) from every
+    other outcome (`True`) -- a timed-out or degraded scan still RAN, it
+    just didn't produce a usable report; that finer distinction is
+    `degraded`.
+    """
+    if event_log is None:
+        return
+    event_log.append(
+        YIELD_SCAN_KIND,
+        {
+            "ran": ran,
+            "degraded": degraded,
+            "warning": warning,
+            "n_entries": n_entries,
+            "timeout_s": timeout_s,
+        },
+    )
+
+
 def yield_scan(
-    layout: Layout, knobs: Knobs | None = None, *, timeout: float | None = None
+    layout: Layout,
+    knobs: Knobs | None = None,
+    *,
+    timeout: float | None = None,
+    event_log: EventLog | None = None,
 ) -> YieldResult | None:
     """Run `ctx-yield scan --json` against `layout.root` and return its
     result, composed as a subprocess call — never an import of `ctx-yield`
@@ -226,15 +277,28 @@ def yield_scan(
 
     `timeout` overrides `YIELD_SCAN_TIMEOUT_SECONDS` for one call (mainly
     so tests can exercise the timeout path without a 30-second test).
-    """
-    binary = shutil.which(YIELD_BINARY_NAME)
-    if binary is None:
-        return None
 
-    knobs = knobs if knobs is not None else Knobs()
+    `event_log`, if given, gets exactly one `YIELD_SCAN_KIND` event per
+    call — one for every outcome (not installed, timed out, degraded, or
+    clean/findings), never conditionally skipped. See module docstring.
+    """
     effective_timeout = (
         timeout if timeout is not None else YIELD_SCAN_TIMEOUT_SECONDS
     )
+
+    binary = shutil.which(YIELD_BINARY_NAME)
+    if binary is None:
+        _emit_yield_scan_event(
+            event_log,
+            ran=False,
+            degraded=False,
+            warning=NOT_INSTALLED_HINT,
+            n_entries=0,
+            timeout_s=effective_timeout,
+        )
+        return None
+
+    knobs = knobs if knobs is not None else Knobs()
 
     cmd = [binary, "scan", "--json", str(layout.root)]
     if knobs.yield_exact:
@@ -245,21 +309,48 @@ def yield_scan(
     try:
         proc = _run_ctx_yield(cmd, timeout=effective_timeout)
     except subprocess.TimeoutExpired:
-        return YieldResult(
+        result = YieldResult(
             warning=f"ctx-yield scan timed out after {effective_timeout:g}s"
         )
+        _emit_yield_scan_event(
+            event_log,
+            ran=True,
+            degraded=True,
+            warning=result.warning,
+            n_entries=0,
+            timeout_s=effective_timeout,
+        )
+        return result
     except OSError as exc:
         # Defensive: shutil.which already confirmed the binary resolves, but
         # it can still fail to actually launch (permissions, a broken shim,
         # a race where it was removed between the which() and the spawn).
-        return YieldResult(warning=f"ctx-yield could not be run: {exc}")
+        result = YieldResult(warning=f"ctx-yield could not be run: {exc}")
+        _emit_yield_scan_event(
+            event_log,
+            ran=True,
+            degraded=True,
+            warning=result.warning,
+            n_entries=0,
+            timeout_s=effective_timeout,
+        )
+        return result
 
     # ctx-yield's own exit code encodes ITS `--budget` gate, which ctx-core
     # never passes — a non-zero exit with a well-formed report is not a
     # failure from this module's point of view, so the exit code is not
     # consulted here. `_parse_report` is what decides success vs. degraded,
     # purely from whether stdout is the shape this module expects.
-    return _parse_report(proc.stdout)
+    result = _parse_report(proc.stdout)
+    _emit_yield_scan_event(
+        event_log,
+        ran=True,
+        degraded=result.warning is not None,
+        warning=result.warning,
+        n_entries=len(result.entries),
+        timeout_s=effective_timeout,
+    )
+    return result
 
 
 def dead_weight_map(

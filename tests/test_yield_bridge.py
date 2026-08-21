@@ -10,6 +10,7 @@ knob-pass-through, and the `dead_weight_map` join onto a packer `Entry`.
 
 from __future__ import annotations
 
+import json
 import os
 import subprocess
 import sys
@@ -19,9 +20,12 @@ from pathlib import Path
 import pytest
 
 from ctx_core.config import Knobs
+from ctx_core.events import EventLog
 from ctx_core.indexing import Entry
 from ctx_core.layout import Layout
 from ctx_core.yield_bridge import (
+    NOT_INSTALLED_HINT,
+    YIELD_SCAN_KIND,
     YieldEntry,
     YieldResult,
     dead_weight_map,
@@ -238,6 +242,105 @@ def test_dead_weight_map_joins_by_path(
 def test_dead_weight_map_empty_result_yields_empty_map() -> None:
     pack_entries = [_entry("core/card.md")]
     assert dead_weight_map(pack_entries, YieldResult()) == {}
+
+
+# --- event_log emission (TODO Medium: yield-bridge eventlog line) ----------
+
+
+def _log_kinds(log: EventLog) -> list[dict]:
+    if not log.path.exists():
+        return []
+    return [json.loads(line) for line in log.path.read_text(encoding="utf-8").splitlines()]
+
+
+def test_no_event_log_emits_nothing(
+    fake_ctx_yield_on_path: None, monkeypatch: pytest.MonkeyPatch, layout: Layout
+) -> None:
+    _set_mode(monkeypatch, "clean")
+    log = EventLog(layout.root / "var" / "log" / "events.jsonl")
+
+    yield_scan(layout)  # no event_log= at all
+
+    assert not log.path.exists()
+
+
+def test_clean_run_emits_exactly_one_event(
+    fake_ctx_yield_on_path: None, monkeypatch: pytest.MonkeyPatch, layout: Layout
+) -> None:
+    _set_mode(monkeypatch, "findings")
+    log = EventLog(layout.root / "var" / "log" / "events.jsonl")
+
+    result = yield_scan(layout, event_log=log)
+
+    records = _log_kinds(log)
+    assert len(records) == 1
+    assert records[0]["kind"] == YIELD_SCAN_KIND
+    assert records[0]["payload"] == {
+        "ran": True,
+        "degraded": False,
+        "warning": None,
+        "n_entries": len(result.entries),
+        "timeout_s": pytest.approx(30.0),
+    }
+
+
+def test_not_installed_emits_ran_false(
+    no_ctx_yield_on_path: None, layout: Layout
+) -> None:
+    log = EventLog(layout.root / "var" / "log" / "events.jsonl")
+
+    result = yield_scan(layout, event_log=log)
+
+    assert result is None
+    records = _log_kinds(log)
+    assert len(records) == 1
+    payload = records[0]["payload"]
+    assert payload["ran"] is False
+    assert payload["degraded"] is False
+    assert payload["warning"] == NOT_INSTALLED_HINT
+    assert payload["n_entries"] == 0
+
+
+def test_degraded_run_emits_ran_true_degraded_true(
+    fake_ctx_yield_on_path: None, monkeypatch: pytest.MonkeyPatch, layout: Layout
+) -> None:
+    _set_mode(monkeypatch, "malformed")
+    log = EventLog(layout.root / "var" / "log" / "events.jsonl")
+
+    yield_scan(layout, event_log=log)
+
+    payload = _log_kinds(log)[0]["payload"]
+    assert payload["ran"] is True
+    assert payload["degraded"] is True
+    assert "not valid JSON" in payload["warning"]
+    assert payload["n_entries"] == 0
+
+
+def test_timeout_emits_ran_true_degraded_true(
+    fake_ctx_yield_on_path: None, monkeypatch: pytest.MonkeyPatch, layout: Layout
+) -> None:
+    _set_mode(monkeypatch, "hang")
+    log = EventLog(layout.root / "var" / "log" / "events.jsonl")
+
+    yield_scan(layout, timeout=SHORT_TIMEOUT_SECONDS, event_log=log)
+
+    payload = _log_kinds(log)[0]["payload"]
+    assert payload["ran"] is True
+    assert payload["degraded"] is True
+    assert "timed out" in payload["warning"]
+    assert payload["timeout_s"] == pytest.approx(SHORT_TIMEOUT_SECONDS)
+
+
+def test_two_scans_emit_two_events_not_one(
+    fake_ctx_yield_on_path: None, monkeypatch: pytest.MonkeyPatch, layout: Layout
+) -> None:
+    _set_mode(monkeypatch, "clean")
+    log = EventLog(layout.root / "var" / "log" / "events.jsonl")
+
+    yield_scan(layout, event_log=log)
+    yield_scan(layout, event_log=log)
+
+    assert len(_log_kinds(log)) == 2
 
 
 # --- fixture shims resolve on this platform ---------------------------------

@@ -642,6 +642,57 @@ def test_yield_malformed_json_is_degraded_not_clean(
 
 
 # ==========================================================================
+# ctx-yield: event_log threading + yield_runs_in_window fold
+# (TODO Medium, "yield-bridge eventlog line")
+# ==========================================================================
+
+
+def test_no_event_log_means_no_yield_scan_event_emitted(
+    no_ctx_yield_on_path: None, tmp_path: Path
+) -> None:
+    layout = Layout(tmp_path)
+    log_path = default_eventlog_path(layout.root, Knobs().eventlog_path)
+
+    compute_stats(layout, Knobs(), now=FIXED_NOW)  # no event_log=
+
+    assert not log_path.exists()
+
+
+def test_event_log_gets_exactly_one_yield_scan_event_per_compute_stats_call(
+    no_ctx_yield_on_path: None, tmp_path: Path
+) -> None:
+    layout = Layout(tmp_path)
+    log = EventLog(default_eventlog_path(layout.root, Knobs().eventlog_path))
+
+    compute_stats(layout, Knobs(), now=FIXED_NOW, event_log=log)
+
+    lines = [l for l in log.path.read_text(encoding="utf-8").splitlines() if l]
+    assert len(lines) == 1
+    record = json.loads(lines[0])
+    assert record["kind"] == "yield_scan"
+    assert record["payload"]["ran"] is False  # no ctx-yield on PATH in this fixture
+
+
+def test_yield_runs_in_window_folds_prior_runs_not_this_ones(
+    no_ctx_yield_on_path: None, tmp_path: Path
+) -> None:
+    """A `compute_stats` call's OWN `yield_scan` event (emitted at the end
+    of this same call) must not count towards its own report -- `windowed`
+    is computed from the log as it stood before this call ran. A SECOND
+    call sees the first call's event.
+    """
+    layout = Layout(tmp_path)
+    log = EventLog(default_eventlog_path(layout.root, Knobs().eventlog_path))
+
+    first = compute_stats(layout, Knobs(), now=FIXED_NOW, event_log=log)
+    assert first.yield_info["yield_runs_in_window"] == 0
+
+    second = compute_stats(layout, Knobs(), now=FIXED_NOW, event_log=log)
+    assert second.yield_info["yield_runs_in_window"] == 1
+    assert "1 composition run(s) recorded in this window." in second.render_md()
+
+
+# ==========================================================================
 # write_products()
 # ==========================================================================
 

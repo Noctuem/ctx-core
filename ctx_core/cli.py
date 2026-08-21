@@ -341,7 +341,8 @@ def _cmd_stats(args: argparse.Namespace) -> int:
     layout = Layout(args.root)
     knobs = Knobs.load(layout.root)
     since_days = args.since if args.since is not None else knobs.stats_window_days
-    report = compute_stats(layout, knobs, since_days=since_days)
+    event_log = EventLog(default_eventlog_path(layout.root, knobs.eventlog_path))
+    report = compute_stats(layout, knobs, since_days=since_days, event_log=event_log)
     paths = write_products(report, layout)
     print(report.render_md(), end="")
     print(f"Products written: {', '.join(str(p) for p in paths)}")

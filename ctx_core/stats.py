@@ -39,10 +39,10 @@ from pathlib import Path
 from typing import Any
 
 from .config import Knobs
-from .events import EventKind, default_eventlog_path
+from .events import EventKind, EventLog, default_eventlog_path
 from .indexing import FRONT_MATTER, Entry, build_index
 from .layout import Layout
-from .yield_bridge import NOT_INSTALLED_HINT, dead_weight_map, yield_scan
+from .yield_bridge import NOT_INSTALLED_HINT, YIELD_SCAN_KIND, dead_weight_map, yield_scan
 
 # ==========================================================================
 # Named constants — no bare literals below.
@@ -435,6 +435,9 @@ class StatsReport:
 
         y = self.yield_info
         lines += ["", "## ctx-yield dead weight", ""]
+        lines.append(
+            f"{y['yield_runs_in_window']:,} composition run(s) recorded in this window."
+        )
         if not y["ran"]:
             lines.append(f"- not measured — {y['warning']}")
         elif y["degraded"]:
@@ -459,6 +462,7 @@ def compute_stats(
     *,
     since_days: int | float | None = None,
     now: float | None = None,
+    event_log: EventLog | None = None,
 ) -> StatsReport:
     """Fold the event log, the corpus index, `var/sessions/`, `notes/intake/`,
     and (if installed) `ctx-yield`'s scan into one `StatsReport`.
@@ -476,6 +480,16 @@ def compute_stats(
     `--since` is omitted; this function does not read that knob itself
     (nothing in the v0.2 module set owns `config.py`'s `Knobs` — see
     `_build/stats/done.md`).
+
+    `event_log`, if given, is threaded straight through to
+    `yield_bridge.yield_scan` (see `_fold_yield`) so a `ctx stats` run logs
+    its own ctx-yield composition run for a LATER `ctx stats` call to fold
+    into `yield.yield_runs_in_window` (TODO Medium, "yield-bridge eventlog
+    line"). This is the one deliberate exception to the "pure fold" framing
+    above: passing `event_log` makes this call a write as well as a read,
+    the same way `packer.pack` always writes one event as a side effect of
+    an otherwise read-heavy call. `event_log=None` (the default) keeps
+    `compute_stats` a pure read.
     """
     effective_now = now if now is not None else time.time()
     window_start = effective_now - float(since_days) * 86_400 if since_days is not None else None
@@ -493,7 +507,7 @@ def compute_stats(
     doctor = _fold_doctor(windowed)
     intake = _fold_intake(layout, windowed, effective_now)
     sessions = _fold_sessions(layout, windowed)
-    yield_info = _fold_yield(layout, knobs, entries)
+    yield_info = _fold_yield(layout, knobs, entries, windowed, event_log=event_log)
 
     return StatsReport(
         generated_at=_iso(effective_now),
@@ -694,15 +708,41 @@ def _fold_sessions(layout: Layout, windowed: list[dict]) -> dict[str, Any]:
 # --- ctx-yield dead weight ------------------------------------------------
 
 
-def _fold_yield(layout: Layout, knobs: Knobs, entries: list[Entry]) -> dict[str, Any]:
-    result = yield_scan(layout, knobs)
+def _fold_yield(
+    layout: Layout,
+    knobs: Knobs,
+    entries: list[Entry],
+    windowed: list[dict],
+    *,
+    event_log: EventLog | None = None,
+) -> dict[str, Any]:
+    yield_runs_in_window = sum(1 for e in windowed if e.get("kind") == YIELD_SCAN_KIND)
+    result = yield_scan(layout, knobs, event_log=event_log)
     if result is None:
-        return {"ran": False, "degraded": False, "warning": NOT_INSTALLED_HINT, "dead_weight_files": []}
+        return {
+            "ran": False,
+            "degraded": False,
+            "warning": NOT_INSTALLED_HINT,
+            "dead_weight_files": [],
+            "yield_runs_in_window": yield_runs_in_window,
+        }
     if result.warning is not None:
-        return {"ran": True, "degraded": True, "warning": result.warning, "dead_weight_files": []}
+        return {
+            "ran": True,
+            "degraded": True,
+            "warning": result.warning,
+            "dead_weight_files": [],
+            "yield_runs_in_window": yield_runs_in_window,
+        }
     joined = dead_weight_map(entries, result)
     dead = sorted(path for path, ye in joined.items() if ye.never_recalled)
-    return {"ran": True, "degraded": False, "warning": None, "dead_weight_files": dead}
+    return {
+        "ran": True,
+        "degraded": False,
+        "warning": None,
+        "dead_weight_files": dead,
+        "yield_runs_in_window": yield_runs_in_window,
+    }
 
 
 # ==========================================================================
