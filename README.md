@@ -76,6 +76,17 @@ ctx doctor
 `ctx init` also accepts `--answers answers.json` for non-interactive/scripted setup
 (see `docs/ADOPTION.md`).
 
+Want to see the commands above run against real, already-populated content instead
+of a fresh clone's empty `notes/`? `examples/corpus/` is a small, committed corpus
+(fictional domain, realistic shape — a pinned note, a decisions log, and one
+note deliberately oversized for its own small budget) you can point `--root` at:
+
+```sh
+ctx pack "help a new teammate ramp up on the product" --root examples/corpus
+```
+
+See `examples/corpus/README.md` for what it demonstrates.
+
 ## Command surface
 
 ```

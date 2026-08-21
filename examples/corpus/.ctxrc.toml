@@ -1,0 +1,7 @@
+# Example corpus knob overrides -- see the main README's "Configuration &
+# tunables" reference (ctx_core/config.py `Knobs`) for the full list.
+#
+# A small budget on purpose: this corpus ships one deliberately oversized
+# note (notes/eng/deploy-runbook.md) specifically so `ctx pack` has
+# something real to drop, with a real reason, against a real budget.
+pack_budget_tokens = 3000
