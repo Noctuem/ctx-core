@@ -65,6 +65,13 @@ class Entry:
     # --- pack-time working state (see packer.py) ---
     age_days: float = 0.0
     relevance: float = 0.0
+    #: Unpadded term-overlap coverage (`overlap / max(1, len(query_terms))`)
+    #: -- distinct from `relevance`, which uses a padded denominator
+    #: (`max(3, len(q))`) for anti-noise scoring purposes. `packer.py`'s age
+    #: gate exemption reads THIS field, not `relevance`, so a short (1-2
+    #: term) task can still resurrect a genuinely well-matched old note --
+    #: see `AGE_GATE_RELEVANCE_EXEMPT`'s docstring in packer.py.
+    coverage: float = 0.0
     is_data: bool = False       # structured data blob vs. prose; see classify_is_data
     always_include: bool = False
 

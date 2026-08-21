@@ -60,12 +60,19 @@ W_RECENCY = 0.35
 ALWAYS_INCLUDE_MAX_TOKENS = 10_000
 
 #: Notes older than this (in days) are dropped from the ranked pool unless
-#: their relevance clears `AGE_GATE_RELEVANCE_EXEMPT` — a soft staleness
-#: filter, not a hard exclusion. Tuned default.
+#: their term-overlap coverage clears `AGE_GATE_RELEVANCE_EXEMPT` — a soft
+#: staleness filter, not a hard exclusion. Tuned default.
 MAX_ITEM_AGE_DAYS = 40
 
-#: Relevance at or above which the age gate above does not apply — a note
-#: that matches the task this well is not "stale bulk" no matter its age.
+#: Unpadded term-overlap COVERAGE (`Entry.coverage`, not `Entry.relevance`)
+#: at or above which the age gate above does not apply — a note that
+#: matches the task this well is not "stale bulk" no matter its age.
+#: Deliberately checked against coverage rather than the scored relevance:
+#: relevance's padded `max(3, len(q))` denominator (an anti-noise measure
+#: for the RANKING) also caps a 1-2-term task's relevance below this
+#: threshold no matter how good the match, making the exemption
+#: unreachable for short tasks (review finding, 2026-08-21). Coverage has
+#: no such floor.
 AGE_GATE_RELEVANCE_EXEMPT = 0.75
 
 #: An entry scoring at or below this FRACTION of the pack's own top match is
@@ -414,6 +421,15 @@ def pack(
 
     for e in entries:
         overlap = len(q & set(e.terms))
+        # Unpadded coverage — what fraction of the task's own terms this
+        # entry actually matched, with no anti-noise floor. Carried
+        # separately from `relevance` (below) because the age gate needs
+        # THIS number: the padded `max(3, len(q))` denominator that
+        # protects the score from 1-2-term noise also makes the age-gate
+        # exemption unreachable for a short, well-aimed task (its ceiling
+        # is `len(q)/3` — 0.33 or 0.67 for a 1- or 2-term query, never
+        # AGE_GATE_RELEVANCE_EXEMPT's 0.75). See the age-gate filter below.
+        e.coverage = overlap / max(1, len(q)) if q else 0.0
         rel = min(1.0, overlap / max(3, len(q))) if q else 0.0
         # Named outright in the task — every tier. See _named_literally.
         if mentions and _named_literally(mentions, e.path):
@@ -480,10 +496,13 @@ def pack(
     # an ordinary low-relevance drop, and a worker reading it has no way to
     # tell "old and unmatched" apart from "young and unmatched" (review
     # finding, 2026-08-21).
+    # Exemption reads `coverage` (unpadded), never `relevance` (padded) —
+    # see the field's docstring in indexing.py and the comment on its
+    # computation above.
     age_gated: list[Entry] = []
     kept_pool: list[Entry] = []
     for e in pool:
-        if e.age_days <= MAX_ITEM_AGE_DAYS or e.relevance >= AGE_GATE_RELEVANCE_EXEMPT:
+        if e.age_days <= MAX_ITEM_AGE_DAYS or e.coverage >= AGE_GATE_RELEVANCE_EXEMPT:
             kept_pool.append(e)
         else:
             age_gated.append(e)

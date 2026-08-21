@@ -627,6 +627,51 @@ def test_age_gate_drop_has_distinct_reason_not_the_generic_cutoff(
     assert "below relevance/recency cutoff" not in reason
 
 
+def test_age_gate_exemption_reachable_by_a_two_term_task(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Before the coverage fix, a 2-term query's PADDED relevance could
+    never clear `AGE_GATE_RELEVANCE_EXEMPT` (ceiling 2/3 < 0.75) no matter
+    how good the match -- only naming, pinning, or `--last` could rescue an
+    old note. The gate must instead read UNPADDED coverage: full 2/2
+    overlap on a 2-term task clears 0.75 and survives the pool."""
+    _freeze_time(monkeypatch)
+    layout = Layout(tmp_path)
+    _write(
+        layout.notes / "ancient-relevant.md",
+        "# Ancient relevant\n\nsprocket widget, sprocket widget, all about it.\n",
+    )
+    _age(layout.notes / "ancient-relevant.md", MAX_ITEM_AGE_DAYS + 10)
+    knobs = Knobs(pack_budget_tokens=8000)
+
+    manifest = pack("sprocket widget", layout, knobs, event_log=EventLog(tmp_path / "events.jsonl"))
+
+    assert any(e.path == "notes/ancient-relevant.md" for e in manifest.entries)
+
+
+def test_age_gate_still_drops_a_two_term_task_with_zero_overlap(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The companion negative case: the same 2-term task against an old
+    note with NO term overlap is still gated and dropped with the item-1
+    reason -- the fix widens what CAN clear the exemption, it does not
+    loosen the gate itself."""
+    _freeze_time(monkeypatch)
+    layout = Layout(tmp_path)
+    _write(
+        layout.notes / "ancient-unrelated.md",
+        "# Ancient unrelated\n\nCompletely different subject matter entirely.\n",
+    )
+    _age(layout.notes / "ancient-unrelated.md", MAX_ITEM_AGE_DAYS + 10)
+    knobs = Knobs(pack_budget_tokens=8000)
+
+    manifest = pack("sprocket widget", layout, knobs, event_log=EventLog(tmp_path / "events.jsonl"))
+
+    assert not any(e.path == "notes/ancient-unrelated.md" for e in manifest.entries)
+    reason = dict((e.path, r) for e, r in manifest.dropped)["notes/ancient-unrelated.md"]
+    assert reason.startswith(f"older than {MAX_ITEM_AGE_DAYS}d")
+
+
 def test_intake_item_under_cap_is_admitted_regardless_of_task(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
