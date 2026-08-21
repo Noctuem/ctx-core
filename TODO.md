@@ -23,6 +23,22 @@
 
 ## Low
 
+- [ ] Docs drift: `sessions.py` module docstring says `Knobs` does not yet carry the
+  session knobs / awaits m14 wiring — they exist (config.py) and every call site (CLI
+  `_session_board`, all four hooks) threads them through; fix the comment, optionally
+  let `SessionBoard.__init__` read Knobs directly [2026-08-21, state-report survey]
+- [ ] `EventKind.INIT_RUN` is defined and never emitted (`init.py` never touches the
+  log) — wire `init` to emit it (stats could report "initialized N days ago") or delete
+  it [2026-08-21, state-report survey]
+- [ ] Stats `_classify_drop_reason` misses the intake-cap reason ("unrouted intake item
+  over the … cap") — it always folds into `other`; add the prefix (one line)
+  [2026-08-21, state-report survey]
+- [ ] `INTAKE_ROUTE_AGE_KEYS` hedges four key names; the emitter writes `age_days` only —
+  pin one, delete three [2026-08-21, state-report survey]
+- [ ] Pack the engine's own corpus once so this repo's stats products stop reporting an
+  empty packs section (0 `context_assembled` in its own log) and the index-freshness
+  check has a baseline [2026-08-21, state-report survey]
+
 - [ ] Cosmetic: `_move_to_history`'s stamp suffix never yields the `Z` the comment
   promises (first `.replace` already turns `+00:00` into `+0000`); files stay unique
   and parse fine — tidy the comment or the replace chain [2026-08-20, found landing the
