@@ -285,6 +285,51 @@ def test_doctor_pass_rate_folds_ok_and_failed_runs(no_ctx_yield_on_path: None, t
 
 
 # ==========================================================================
+# initialized_at (INIT_RUN fold, TODO Low state-report survey item 2)
+# ==========================================================================
+
+
+def test_initialized_at_is_null_with_no_init_run(no_ctx_yield_on_path: None, tmp_path: Path) -> None:
+    layout = Layout(tmp_path)
+
+    report = compute_stats(layout, Knobs(), now=FIXED_NOW)
+
+    assert report.window["initialized_at"] is None
+    assert "Not yet initialized" in report.render_md()
+
+
+def test_initialized_at_is_newest_init_run_ts(no_ctx_yield_on_path: None, tmp_path: Path) -> None:
+    layout = Layout(tmp_path)
+    log = EventLog(default_eventlog_path(layout.root, Knobs().eventlog_path))
+    log.append(EventKind.INIT_RUN, {"customized": True, "fields": ["name"]})
+    log.append(EventKind.INIT_RUN, {"customized": True, "fields": ["name", "domain_purpose"]})
+
+    _set_ts(log.path, 0, _iso_days_ago(FIXED_NOW, 10))
+    _set_ts(log.path, 1, _iso_days_ago(FIXED_NOW, 2))  # newer -- must win
+
+    report = compute_stats(layout, Knobs(), now=FIXED_NOW)
+
+    assert report.window["initialized_at"] == _iso_days_ago(FIXED_NOW, 2)
+    assert f"Initialized `{_iso_days_ago(FIXED_NOW, 2)}`." in report.render_md()
+
+
+def test_initialized_at_is_not_window_scoped(no_ctx_yield_on_path: None, tmp_path: Path) -> None:
+    """A corpus initialized before the `--since` window start must not read
+    as never-initialized -- `initialized_at` folds the whole log, mirroring
+    `doctor._last_context_assembled_ts`'s own posture (see stats.py's
+    `_last_init_run_ts` docstring).
+    """
+    layout = Layout(tmp_path)
+    log = EventLog(default_eventlog_path(layout.root, Knobs().eventlog_path))
+    log.append(EventKind.INIT_RUN, {"customized": True, "fields": ["name"]})
+    _set_ts(log.path, 0, _iso_days_ago(FIXED_NOW, 40))  # outside a 7-day window
+
+    report = compute_stats(layout, Knobs(), since_days=7, now=FIXED_NOW)
+
+    assert report.window["initialized_at"] == _iso_days_ago(FIXED_NOW, 40)
+
+
+# ==========================================================================
 # Window filtering
 # ==========================================================================
 
@@ -307,6 +352,7 @@ def test_since_days_window_excludes_older_events(no_ctx_yield_on_path: None, tmp
         "since_days": 7,
         "start": _iso_days_ago(FIXED_NOW, 7),
         "end": windowed.window["end"],
+        "initialized_at": None,
     }
     assert unbounded.window["start"] is None
 

@@ -8,11 +8,14 @@ real stdin, so the suite stays hermetic.
 
 from __future__ import annotations
 
+import json
 import shutil
 from pathlib import Path
 
 import pytest
 
+from ctx_core.config import Knobs
+from ctx_core.events import EventKind, EventLog, default_eventlog_path
 from ctx_core.init import (
     ANSWER_FIELDS,
     CANCELLED_MESSAGE,
@@ -159,6 +162,88 @@ def test_non_interactive_overwrites_hand_customized_profile(tmp_path: Path) -> N
     text = _profile_text(clone)
     assert "Ada" in text
     assert "Hand Written" not in text
+
+
+# --- INIT_RUN event emission (TODO Low, state-report survey item 2) ---
+
+
+def _kinds(log: EventLog) -> list[dict]:
+    if not log.path.exists():
+        return []
+    return [json.loads(line) for line in log.path.read_text(encoding="utf-8").splitlines()]
+
+
+def test_writes_profile_emits_init_run_event(tmp_path: Path) -> None:
+    clone = tmp_path / "clone"
+    _copy_template(clone)
+    layout = Layout(clone)
+    log = EventLog(default_eventlog_path(layout.root, Knobs().eventlog_path))
+
+    run_interview(layout, answers=SAMPLE_ANSWERS, event_log=log)
+
+    records = _kinds(log)
+    assert len(records) == 1
+    assert records[0]["kind"] == EventKind.INIT_RUN.value
+    assert records[0]["payload"]["customized"] is True
+    assert set(records[0]["payload"]["fields"]) == set(SAMPLE_ANSWERS)
+
+
+def test_all_blank_answers_emit_customized_false(tmp_path: Path) -> None:
+    clone = tmp_path / "clone"
+    _copy_template(clone)
+    layout = Layout(clone)
+    log = EventLog(default_eventlog_path(layout.root, Knobs().eventlog_path))
+
+    run_interview(layout, answers={}, event_log=log)
+
+    records = _kinds(log)
+    assert records[0]["payload"] == {"customized": False, "fields": []}
+
+
+def test_rerunning_emits_one_event_per_write(tmp_path: Path) -> None:
+    clone = tmp_path / "clone"
+    _copy_template(clone)
+    layout = Layout(clone)
+    log = EventLog(default_eventlog_path(layout.root, Knobs().eventlog_path))
+
+    run_interview(layout, answers=SAMPLE_ANSWERS, event_log=log)
+    run_interview(layout, answers=SAMPLE_ANSWERS, event_log=log)
+
+    assert len(_kinds(log)) == 2
+
+
+def test_default_event_log_used_when_none_given(tmp_path: Path) -> None:
+    """No `event_log=` -- falls back to the corpus's own default log path
+    (same injectable-for-test-isolation pattern as `sessions.py`/`archive.py`).
+    """
+    clone = tmp_path / "clone"
+    _copy_template(clone)
+    layout = Layout(clone)
+
+    run_interview(layout, answers=SAMPLE_ANSWERS)
+
+    log_path = default_eventlog_path(layout.root, Knobs().eventlog_path)
+    assert log_path.is_file()
+    records = json.loads(log_path.read_text(encoding="utf-8").splitlines()[0])
+    assert records["kind"] == EventKind.INIT_RUN.value
+
+
+def test_keyboard_interrupt_emits_no_event(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    clone = tmp_path / "clone"
+    _copy_template(clone)
+    layout = Layout(clone)
+    log = EventLog(default_eventlog_path(layout.root, Knobs().eventlog_path))
+
+    def _raise_interrupt(_prompt: str = "") -> str:
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr("builtins.input", _raise_interrupt)
+
+    run_interview(layout, event_log=log)
+
+    assert not log.path.exists()
 
 
 # --- interactive mode (stdin via monkeypatched input) ---

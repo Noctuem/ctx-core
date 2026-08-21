@@ -28,6 +28,7 @@ from ctx_core.domains import (
     DomainPathNotFoundError,
     DomainRegistry,
 )
+from ctx_core.events import EventLog, default_eventlog_path
 from ctx_core.init import run_interview
 from ctx_core.intake import DEFAULT_SOURCE, VALID_SOURCES
 from ctx_core.intake import intake_add as run_intake_add
@@ -167,11 +168,13 @@ def _cmd_archive_stub(args: argparse.Namespace) -> int:
 
 def _cmd_init(args: argparse.Namespace) -> int:
     layout = Layout(args.root)
+    knobs = Knobs.load(layout.root)
+    event_log = EventLog(default_eventlog_path(layout.root, knobs.eventlog_path))
     if args.answers is not None:
         answers = json.loads(Path(args.answers).read_text(encoding="utf-8"))
-        run_interview(layout, answers=answers)
+        run_interview(layout, answers=answers, event_log=event_log)
     else:
-        run_interview(layout, answers=None)
+        run_interview(layout, answers=None, event_log=event_log)
     return EXIT_OK
 
 

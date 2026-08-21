@@ -258,6 +258,29 @@ def _mean_median(values: list[float]) -> tuple[float | None, float | None]:
     return statistics.fmean(values), statistics.median(values)
 
 
+def _last_init_run_ts(events: list[dict]) -> str | None:
+    """The `ts` (ISO-8601 string, as recorded) of the newest `INIT_RUN`
+    event in `events`, or `None` if there is none. Read over the FULL,
+    un-windowed event list rather than `windowed` -- "when was this corpus
+    last initialized" is a corpus-wide fact, not scoped to `--since`, the
+    same posture `doctor.py`'s `_last_context_assembled_ts` takes for the
+    same reason (a corpus initialized before the window start must not read
+    as never-initialized).
+    """
+    best_epoch: float | None = None
+    best_iso: str | None = None
+    for record in events:
+        if record.get("kind") != EventKind.INIT_RUN.value:
+            continue
+        epoch = _parse_iso(record.get("ts", ""))
+        if epoch is None:
+            continue
+        if best_epoch is None or epoch > best_epoch:
+            best_epoch = epoch
+            best_iso = record.get("ts")
+    return best_iso
+
+
 # ==========================================================================
 # StatsReport
 # ==========================================================================
@@ -309,6 +332,9 @@ class StatsReport:
             else "Window: all time",
             f"From `{w['start'] or '(unbounded)'}` through `{w['end']}`.",
             f"Generated `{self.generated_at}`.",
+            f"Initialized `{w['initialized_at']}`."
+            if w.get("initialized_at")
+            else "Not yet initialized — no `ctx init` run recorded.",
             "",
             "## Packs",
             "",
@@ -474,6 +500,7 @@ def compute_stats(
             "since_days": since_days,
             "start": _iso(window_start) if window_start is not None else None,
             "end": _iso(effective_now),
+            "initialized_at": _last_init_run_ts(events),
         },
         packs=packs,
         drop_reasons=drop_reasons,

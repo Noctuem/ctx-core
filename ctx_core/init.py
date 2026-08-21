@@ -33,12 +33,27 @@ profile's *current* values -- it re-asks all four questions fresh. Reading
 prior answers back out of the rendered markdown would need a parser this
 module has no other use for; revisit if a later module wants round-trip
 editing.
+
+Every successful write also appends one `EventKind.INIT_RUN` event -- the
+constant existed since `events.py` shipped (0.1.0) but nothing emitted it
+until now (TODO Low, state-report survey, 2026-08-21). Payload:
+`{"customized": bool, "fields": [...]}` -- `fields` names which of
+`ANSWER_FIELDS`' keys carried a non-blank answer, `customized` is whether
+that list is non-empty (a placeholder-only run -- every field blank -- is
+still a real interview, just an unrevealing one). `event_log`, if given,
+replaces the default `EventLog` derived from `Knobs.load(layout.root)` --
+same injectable-for-test-isolation pattern `packer.pack` /
+`sessions.SessionBoard` use; a Ctrl-C during the interactive prompt loop
+still writes nothing and emits nothing (the existing cancel path returns
+before either).
 """
 
 from __future__ import annotations
 
 from pathlib import Path
 
+from ctx_core.config import Knobs
+from ctx_core.events import EventKind, EventLog, default_eventlog_path
 from ctx_core.layout import PROFILE_PLACEHOLDER, Layout
 
 # --- answer schema: (key, section heading, interactive prompt text) ---
@@ -77,15 +92,25 @@ CANCELLED_MESSAGE = "\nInterview cancelled; profile.md left unchanged."
 YES_ANSWERS = frozenset({"y", "yes"})
 
 
-def run_interview(layout: Layout, answers: dict[str, str] | None = None) -> None:
+def run_interview(
+    layout: Layout,
+    answers: dict[str, str] | None = None,
+    *,
+    event_log: EventLog | None = None,
+) -> None:
     """Write `core/profile.md` for the corpus at `layout`.
 
     `answers=None` drives an interactive prompt loop over stdin. A supplied
     `dict` skips the loop entirely and writes directly -- this is the path
     the test suite and any scripted/CI scaffolding drive.
+
+    `event_log`, if given, is used in place of the default
+    `EventLog(default_eventlog_path(layout.root, knobs.eventlog_path))` for
+    the `INIT_RUN` event this write appends (see module docstring).
     """
     if answers is not None:
         _write_profile(layout, answers)
+        _emit_init_run(layout, answers, event_log)
         return
 
     profile_path = layout.core / "profile.md"
@@ -99,6 +124,7 @@ def run_interview(layout: Layout, answers: dict[str, str] | None = None) -> None
         return
 
     _write_profile(layout, collected)
+    _emit_init_run(layout, collected, event_log)
 
 
 def _is_customized(profile_path: Path) -> bool:
@@ -138,3 +164,20 @@ def _write_profile(layout: Layout, answers: dict[str, str]) -> None:
     layout.core.mkdir(parents=True, exist_ok=True)
     content = _render_profile(answers)
     (layout.core / "profile.md").write_text(content, encoding="utf-8", newline="\n")
+
+
+def _default_event_log(layout: Layout) -> EventLog:
+    # Same pattern as `archive.py` / `sessions.py`'s `_default_event_log`: a
+    # fresh `Knobs.load` (one cheap `.ctxrc.toml` read) so a domain that
+    # customized `eventlog_path` still gets `INIT_RUN` in the right place,
+    # without this module owning a `knobs` parameter of its own.
+    knobs = Knobs.load(layout.root)
+    return EventLog(default_eventlog_path(layout.root, knobs.eventlog_path))
+
+
+def _emit_init_run(
+    layout: Layout, answers: dict[str, str], event_log: EventLog | None
+) -> None:
+    fields = [key for key, _heading, _prompt in ANSWER_FIELDS if str(answers.get(key, "")).strip()]
+    log = event_log if event_log is not None else _default_event_log(layout)
+    log.append(EventKind.INIT_RUN, {"customized": bool(fields), "fields": fields})
