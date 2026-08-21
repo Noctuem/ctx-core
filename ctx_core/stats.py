@@ -138,6 +138,8 @@ _DROP_REASON_PREFIXES = (
     ("near-duplicate of an included file", "near_duplicate"),
     ("over budget", "over_budget"),
     ("below relevance/recency cutoff", "below_cutoff"),
+    ("older than", "age_gated"),
+    ("unrouted intake item over the", "intake_cap"),
 )
 
 #: Mirrors `indexing._FRONT_MATTER_KV` — that pattern is private to

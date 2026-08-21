@@ -607,6 +607,26 @@ def test_age_gate_exempts_high_relevance_stale_note(tmp_path: Path, monkeypatch:
     assert any(e.path == "notes/ancient-relevant.md" for e in manifest.entries)
 
 
+def test_age_gate_drop_has_distinct_reason_not_the_generic_cutoff(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An age-gated drop must be distinguishable, in `manifest.dropped`,
+    from an ordinary low-relevance drop -- review finding 2026-08-21: both
+    used to fall through to the same "below relevance/recency cutoff"
+    wording."""
+    _freeze_time(monkeypatch)
+    layout = Layout(tmp_path)
+    _write(layout.notes / "ancient.md", "# Ancient\n\nCompletely unrelated content.\n")
+    _age(layout.notes / "ancient.md", MAX_ITEM_AGE_DAYS + 10)
+    knobs = Knobs(pack_budget_tokens=8000)
+
+    manifest = pack("some other query", layout, knobs, event_log=EventLog(tmp_path / "events.jsonl"))
+
+    reason = dict((e.path, r) for e, r in manifest.dropped)["notes/ancient.md"]
+    assert reason.startswith(f"older than {MAX_ITEM_AGE_DAYS}d")
+    assert "below relevance/recency cutoff" not in reason
+
+
 def test_intake_item_under_cap_is_admitted_regardless_of_task(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

@@ -472,8 +472,22 @@ def pack(
     pinned = [e for e in entries if e.pinned]
     pool = [e for e in entries if not e.pinned and id(e) not in intake_dropped_ids]
 
-    # Soft staleness filter — never applied to a high-relevance match.
-    pool = [e for e in pool if e.age_days <= MAX_ITEM_AGE_DAYS or e.relevance >= AGE_GATE_RELEVANCE_EXEMPT]
+    # Soft staleness filter — never applied to a high-relevance match. Age-
+    # gated entries get their OWN drop reason (below), carried into
+    # `Manifest.dropped` the same way an oversized entry is, rather than
+    # falling through to the catch-all "below relevance/recency cutoff" at
+    # the bottom of this function — that message is indistinguishable from
+    # an ordinary low-relevance drop, and a worker reading it has no way to
+    # tell "old and unmatched" apart from "young and unmatched" (review
+    # finding, 2026-08-21).
+    age_gated: list[Entry] = []
+    kept_pool: list[Entry] = []
+    for e in pool:
+        if e.age_days <= MAX_ITEM_AGE_DAYS or e.relevance >= AGE_GATE_RELEVANCE_EXEMPT:
+            kept_pool.append(e)
+        else:
+            age_gated.append(e)
+    pool = kept_pool
 
     # Arithmetic, not judgement: nothing larger than the whole working
     # budget can be packed by any ranking. Reported as its own drop reason
@@ -516,7 +530,13 @@ def pack(
             "— no ranking could pack it",
         )
         for e in oversized
-    ] + intake_dropped
+    ] + intake_dropped + [
+        (
+            e,
+            f"older than {MAX_ITEM_AGE_DAYS}d and below the age-gate relevance exemption",
+        )
+        for e in age_gated
+    ]
     total = sum(e.tokens for e in chosen)
     accounted = {id(e) for e in chosen} | {id(d) for d, _ in dropped}
 

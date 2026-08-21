@@ -22,7 +22,7 @@ ctx:created: 2023-11-14T22:13:20Z
 <details><summary>Excluded (3) — retrievable on request</summary>
 
 - `notes/pruning/pruning-guide-long.md` — larger than the whole working budget (450 tok vs 300) — no ranking could pack it
+- `notes/pests/aphids.md` — older than 40d and below the age-gate relevance exemption
 - `notes/composting/composting-scraps-duplicate.md` — near-duplicate of an included file
-- `notes/pests/aphids.md` — below relevance/recency cutoff
 
 </details>

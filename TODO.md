@@ -30,9 +30,6 @@
 - [ ] `EventKind.INIT_RUN` is defined and never emitted (`init.py` never touches the
   log) — wire `init` to emit it (stats could report "initialized N days ago") or delete
   it [2026-08-21, state-report survey]
-- [ ] Stats `_classify_drop_reason` misses the intake-cap reason ("unrouted intake item
-  over the … cap") — it always folds into `other`; add the prefix (one line)
-  [2026-08-21, state-report survey]
 - [ ] `INTAKE_ROUTE_AGE_KEYS` hedges four key names; the emitter writes `age_days` only —
   pin one, delete three [2026-08-21, state-report survey]
 - [ ] Pack the engine's own corpus once so this repo's stats products stop reporting an
@@ -49,6 +46,11 @@
 ## Fleeting Ideas
 
 ## Done
+- [x] Stats `_classify_drop_reason` misses the intake-cap reason ("unrouted intake item
+  over the … cap") — it always folds into `other`; add the prefix (one line)
+  [2026-08-21, state-report survey] — **FIXED 2026-08-21: `_DROP_REASON_PREFIXES` gained
+  `intake_cap` alongside a new `age_gated` label for `packer.py`'s distinct age-gate
+  drop reason (external review pass, item 1)**
 - [x] `ctx pack` has no per-invocation `--budget N` override; the only knobs
   are the 8000 default (2800 under `--summary`) or editing `.ctxrc.toml`.
   Found dogfooding a fresh corpus whose three load-bearing notes ran 3.8k /

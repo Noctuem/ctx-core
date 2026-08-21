@@ -234,6 +234,38 @@ def test_unrecognized_drop_reason_falls_back_to_other(no_ctx_yield_on_path: None
     assert report.drop_reasons == {"other": 1}
 
 
+def test_age_gated_and_intake_cap_drop_reasons_are_classified(
+    no_ctx_yield_on_path: None, tmp_path: Path
+) -> None:
+    """`packer.py`'s two distinct drop reasons (age-gate, intake-cap) --
+    added in the 2026-08-21 review pass -- must classify into their own
+    labels rather than folding into `other`."""
+    layout = Layout(tmp_path)
+    log = EventLog(default_eventlog_path(layout.root, Knobs().eventlog_path))
+    log.append(
+        EventKind.CONTEXT_ASSEMBLED,
+        _pack_payload(
+            budget_tokens=100,
+            total_tokens=0,
+            items=[
+                _dropped(
+                    "notes/ancient.md",
+                    "older than 40d and below the age-gate relevance exemption",
+                ),
+                _dropped(
+                    "notes/intake/big.md",
+                    "unrouted intake item over the 2,000-token intake-always-include "
+                    "cap; read it directly",
+                ),
+            ],
+        ),
+    )
+
+    report = compute_stats(layout, Knobs(), now=FIXED_NOW)
+
+    assert report.drop_reasons == {"age_gated": 1, "intake_cap": 1}
+
+
 # ==========================================================================
 # Doctor pass rate
 # ==========================================================================
