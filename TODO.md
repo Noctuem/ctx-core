@@ -2,15 +2,19 @@
 
 ## High
 
-- [ ] Publish `ctx-core` 0.2.2 to PyPI (maintainer action; README quick-start
+- [ ] [human] Publish `ctx-core` 0.2.3 to PyPI (maintainer action — no PyPI token in the session env; README quick-start
   upgrades to `pip install ctx-core` after) [2026-08-18]
 
 ## Medium
 
-- [ ] Plugin-marketplace + community listing per docs/ADOPTION.md checklist
-  (who submits: maintainer's call) [2026-08-18]
+- [ ] [human] Plugin-marketplace + community listing per docs/ADOPTION.md checklist
+  (who submits: maintainer's call — outward-facing publication) [2026-08-18]
+
+## Low
+
+## Shelved
 - [ ] Hook upgrade path: switch .claude/hooks event append from package
-  import to the `ctx` console script now that the CLI exists [2026-08-18]
+  import to the `ctx` console script now that the CLI exists [2026-08-18] — **SHELVED 2026-08-21 [noctuem]: the import path stays; a subprocess per tool call taxes every tool use and the hooks already fail open if the import fails. Reopen only if the package ever can't be imported from the hook env.**
 - [ ] Claim-guard limit: Bash-issued writes are still unguarded — the guard's
   `PreToolUse` deny path stays Edit/MultiEdit/Write/NotebookEdit only; a
   reliable pre-write path signal for Bash still doesn't exist (a shell
@@ -20,13 +24,9 @@
   after a Bash call and appends `claim_overlap_observed` (windowed count in
   `ctx stats`' Sessions section); never denies. Named limit stays documented
   in `.claude/hooks/README.md`; revisit the guard gap itself if a reliable
-  path signal ever appears [2026-08-18]
+  path signal ever appears [2026-08-18] — **SHELVED 2026-08-21: the observe-only Bash claim-overlap advisory landed (bfa9446); the guard gap itself stays open by design until the harness exposes a reliable path signal.**
 - [ ] Intake completion interview (file-and-track shipped; completion prompts
-  deferred — revisit if filing-without-completing dominates) [2026-08-18]
-
-## Low
-
-## Shelved
+  deferred — revisit if filing-without-completing dominates) [2026-08-18] — **SHELVED 2026-08-21: no evidence yet that filing-without-completing dominates; reopen on that signal.**
 
 ## Fleeting Ideas
 

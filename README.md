@@ -208,9 +208,9 @@ front door (`ctx intake`), and the zero-token stats pipeline (`ctx stats` + the
 `ctx-analyze` skill), plus three new `ctx doctor` checks and two new plugin hooks
 (a `SessionStart` board hook and a fail-open `PreToolUse` claim guard).
 
-Version 0.2.2 adds `ctx sessions heartbeat`, automatic session heartbeat from the
+Version 0.2.3 adds `ctx sessions heartbeat`, automatic session heartbeat from the
 plugin's `PostToolUse` hook, intent recovery on session re-claim, forced UTF-8
-stdio, and `ctx pack --budget N` (a literal per-invocation override) — 360 tests
+stdio, and `ctx pack --budget N` (a literal per-invocation override) — 381 tests
 passing locally, both suite tiers. PyPI publication and the plugin-marketplace
 listing (see `docs/ADOPTION.md` for the checklist) are still the next iteration
 targets.

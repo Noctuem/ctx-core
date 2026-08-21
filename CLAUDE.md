@@ -27,10 +27,18 @@
   README status/estimator line, and a Bash claim-overlap ADVISORY in the
   PostToolUse hook (observe-only; the guard's deny path stays singular);
   VERSION 0.2.2.
-- **Next:** PyPI publish (0.2.2), marketplace listing (TODO). Open design
-  item: cross-repo claims (OQ1, board→SIA bridge) — now also load-bearing for
-  the staged forge draft (hub `_proposed/forge.spec.md`) the moment it runs
-  parallel builders. Decide whether this repo ships an example corpus (TODO Low).
+  Sixth arc 2026-08-21 (Session 8): TODO backlog CLEARED through the system
+  (360→381 tests) — `init_run` emitted + `initialized_at` in stats,
+  `yield_scan` event per composition run, example corpus at
+  `examples/corpus/` packed+doctored in CI, live ctx-yield composition
+  confirmed (0.1.0 on PATH, ran/not degraded), sessions docstring/Knobs,
+  age-key pin, history stamp fixed; three items shelved with reasons.
+  VERSION 0.2.3. Open: only the two [human] items (PyPI, marketplace).
+- **Next:** [human] PyPI publish 0.2.3 + marketplace listing. Engineering
+  backlog is empty; new work arrives via dogfood findings or the ctx-build
+  sibling (spec staged in the hub `new/` lane, private Gitea first). OQ1
+  (cross-repo claims) stays the one open design item — decide before
+  ctx-build runs parallel builders.
 - **Guard (PUBLIC repo):** never commit the repo owner's personal name or
   absolute local paths; author identity is Noctuem. Grep staged changes before
   every push.

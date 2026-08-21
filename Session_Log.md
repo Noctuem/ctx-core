@@ -156,3 +156,25 @@ candidates — the engine repo has no core/notes trees; TODO item re-framed
 notes/projects/specs/new/_proposed/forge.spec.md with map line (hub 55d3800);
 both inbox files handled from a tmp spot, never staged, deleted after. VERSION
 0.2.2.
+
+
+## Session 8 — 2026-08-21 — TODO backlog cleared through the system; ctx-build spec staged — ~70K orchestrator + ~370K agent tokens
+
+noctuem: "using the system go through the todos and do them" then start
+ctx-build (forge renamed into the ctx family). Board claimed for the arc;
+doctor green. One Sonnet worker, seven commits, 360→381: 93c2c85 sessions
+docstring + SessionBoard reads Knobs; 781db24 `init_run` emitted by
+run_interview, stats `window.initialized_at` (full-log read); 9c815f2
+INTAKE_ROUTE_AGE_KEY pinned to `age_days`; 4f50af0 history stamp: replace
+order root-caused, real `Z` suffix, regex `Z$`; 16b2589 `yield_scan` event per
+composition run (every outcome) + windowed `yield_runs_in_window`; f6b9153
+examples/corpus (fictional domain, pinned + decisions-tagged + oversized notes,
+3,000-token .ctxrc) doctored + packed in CI, README quick-start points at it;
+e7851dd live ctx-yield check — already installed (0.1.0), ran/not degraded, no
+API key. Shelved with reasons [noctuem]: hook-upgrade path (import stays;
+subprocess-per-tool-call latency), Bash guard gap (advisory landed; awaits a
+path signal), intake completion interview (no signal). PyPI + marketplace stay
+[human]. VERSION 0.2.3. In parallel an Opus spec author converted forge v0.1 →
+ctx-build spec with a 10-module graph (hub new/ctx-build.spec.md, c4064d2);
+noctuem ruled private Gitea first, mirror later. Next: /sia:new-spec →
+/sia:new-project → /sia:build for ctx-build.
