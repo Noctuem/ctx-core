@@ -88,16 +88,19 @@ _SESSION_ID_RE = re.compile(r"^[A-Za-z0-9_.-]+$")
 _RESERVED_SESSION_IDS = {".", ".."}
 
 #: Matches the `-{stamp}` suffix `_move_to_history` appends on a same-id
-#: collision (see its docstring): `<session_id>-YYYY-MM-DDTHHMMSS.ffffff+0000`.
-#: Note the trailing `+0000`, not `Z` -- `_move_to_history`'s
-#: `.replace(":", "").replace("+00:00", "Z")` strips the colon out of
-#: `+00:00` first (`_utc_now_iso()` always carries that literal UTC
-#: offset), so the second `.replace` never finds its target; this matches
-#: the stamp as it's actually written, not as the docstring there implies.
+#: collision (see its docstring): `<session_id>-YYYY-MM-DDTHHMMSS.ffffffZ`.
+#: `_utc_now_iso()` always carries a literal `+00:00` UTC offset, so
+#: `_move_to_history` substitutes that for `Z` BEFORE stripping colons out
+#: of the time portion -- doing it in the other order (colons stripped
+#: first) turns `+00:00` into `+0000`, which the second `.replace` then
+#: never finds, and the stamp silently ends in `+0000` instead of the `Z`
+#: this pattern (and the stamp's own docstring) name (TODO Low, state-
+#: report survey item 4, 2026-08-21 -- previously a comment-vs-code
+#: mismatch, fixed by reordering the two replaces rather than the regex).
 #: `last_intent()` uses this to tell a repeat-ending's history file
 #: (`<id>-<stamp>.json`) apart from a DIFFERENT session id that merely
 #: starts with `<id>-` (e.g. `last_intent("a")` must not match `a-b.json`).
-_HISTORY_STAMP_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{6}\.\d+\+\d{4}$")
+_HISTORY_STAMP_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{6}\.\d+Z$")
 
 
 class SessionNotFoundError(LookupError):
@@ -317,8 +320,10 @@ class SessionBoard:
         if dest.exists():
             # Append-only: never overwrite a prior history entry. A same-id
             # collision (a session id reused after already ending once) is
-            # disambiguated with a timestamp suffix instead.
-            stamp = record["ended_at"].replace(":", "").replace("+00:00", "Z")
+            # disambiguated with a timestamp suffix instead: `+00:00` -> `Z`
+            # FIRST, then colons stripped -- reversing this order leaves
+            # `+0000` behind instead (see `_HISTORY_STAMP_RE`'s docstring).
+            stamp = record["ended_at"].replace("+00:00", "Z").replace(":", "")
             dest = self.history_dir / f"{live_path.stem}-{stamp}{live_path.suffix}"
         _atomic_write_json(dest, record)
         live_path.unlink(missing_ok=True)

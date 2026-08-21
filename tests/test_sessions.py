@@ -30,6 +30,7 @@ from ctx_core.sessions import (
     SESSION_START,
     SessionBoard,
     SessionNotFoundError,
+    _HISTORY_STAMP_RE,
     _normalize_claim_path,
     _paths_overlap,
     generate_session_id,
@@ -272,6 +273,17 @@ def test_history_collision_gets_disambiguated_not_overwritten(tmp_path: Path) ->
     assert len(history_files) == 2
     intents = {json.loads(p.read_text(encoding="utf-8"))["intent"] for p in history_files}
     assert intents == {"first run", "second run"}
+
+    # The disambiguated file's stamp suffix matches the documented pattern
+    # (TODO Low item 4: `_move_to_history` used to produce `+0000`, not the
+    # `Z` both the comment and `_HISTORY_STAMP_RE` name -- fixed by
+    # reordering the two `.replace()` calls).
+    stamped = [p for p in history_files if p.name != "s1.json"]
+    assert len(stamped) == 1
+    stem_suffix = stamped[0].stem[len("s1-"):]
+    assert _HISTORY_STAMP_RE.fullmatch(stem_suffix), stem_suffix
+    assert stem_suffix.endswith("Z")
+    assert "+0000" not in stem_suffix
 
 
 # ==========================================================================
