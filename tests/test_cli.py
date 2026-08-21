@@ -346,6 +346,37 @@ def test_sessions_release_unknown_session_reports_error(
     assert "No live session" in capsys.readouterr().err
 
 
+def test_sessions_heartbeat_refreshes_a_claimed_session(
+    tmp_path: Path, capsys: pytest.CaptureFixture
+) -> None:
+    root = _fresh_corpus(tmp_path)
+    main(["sessions", "claim", "sess-3", "notes/x", "--root", str(root)])
+    capsys.readouterr()
+    before = json.loads(
+        (Layout(root).var / "sessions" / "live" / "sess-3.json").read_text(encoding="utf-8")
+    )["heartbeat_at"]
+
+    result = main(["sessions", "heartbeat", "sess-3", "--root", str(root)])
+
+    assert result == EXIT_OK
+    assert "Heartbeat refreshed" in capsys.readouterr().out
+    after = json.loads(
+        (Layout(root).var / "sessions" / "live" / "sess-3.json").read_text(encoding="utf-8")
+    )["heartbeat_at"]
+    assert after >= before
+
+
+def test_sessions_heartbeat_unknown_session_reports_error(
+    tmp_path: Path, capsys: pytest.CaptureFixture
+) -> None:
+    root = _fresh_corpus(tmp_path)
+
+    result = main(["sessions", "heartbeat", "does-not-exist", "--root", str(root)])
+
+    assert result == EXIT_ERROR
+    assert "No live session" in capsys.readouterr().err
+
+
 # --- intake (v0.2, m14) ---------------------------------------------------
 
 
@@ -546,6 +577,12 @@ def test_subprocess_sessions_claim_list_release(tmp_path: Path) -> None:
     list_result = run_module_cli(["sessions", "list", "--root", str(root)])
     assert list_result.returncode == EXIT_OK
     assert "sub-sess-1" in list_result.stdout
+
+    heartbeat_result = run_module_cli(
+        ["sessions", "heartbeat", "sub-sess-1", "--root", str(root)]
+    )
+    assert heartbeat_result.returncode == EXIT_OK
+    assert "Heartbeat refreshed" in heartbeat_result.stdout
 
     release_result = run_module_cli(["sessions", "release", "sub-sess-1", "--root", str(root)])
     assert release_result.returncode == EXIT_OK

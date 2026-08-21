@@ -19,6 +19,18 @@ not guaranteed to be on PATH in every environment this hook runs in. Once
 m10 adds one, prefer shelling out to `ctx` (falling back to
 `python -m ctx_core`, then this in-process import) without changing this
 script's stdin/stdout contract.
+
+Automatic heartbeat (v0.2 dogfood finding, `TODO.md` Medium): this hook
+fires on every tool call, so it doubles as the session's liveness pulse --
+a `SessionStart` hook only fires once (or on resume/clear), which is too
+sparse to keep a genuinely long-lived session (dogfooded: ~40 minutes) off
+the `session_stale_seconds` sweep. If `session_id` is present in the
+payload, this calls `SessionBoard.heartbeat(session_id)` after the event
+append; `SessionNotFoundError` (never registered on this board -- e.g. the
+`SessionStart` hook isn't wired, or the corpus's board was reset) is
+swallowed, same fail-open contract as everything else here -- a session
+that was never registered has nothing to heartbeat, and that is not an
+error.
 """
 from __future__ import annotations
 
@@ -74,6 +86,7 @@ def main() -> int:
 
     cwd_hint = payload.get("cwd") or "."
     root = _find_corpus_root(Path(cwd_hint))
+    session_id = payload.get("session_id") or None
 
     try:
         from ctx_core.config import Knobs
@@ -90,7 +103,7 @@ def main() -> int:
             {
                 "tool_name": payload.get("tool_name"),
                 "hook_event_name": payload.get("hook_event_name"),
-                "session_id": payload.get("session_id"),
+                "session_id": session_id,
                 "ts": time.time(),
             },
         )
@@ -98,7 +111,33 @@ def main() -> int:
         _log_error(root, f"event append failed: {traceback.format_exc()}")
         return 0
 
+    if session_id:
+        _heartbeat(root, knobs, session_id)
+
     return 0
+
+
+def _heartbeat(root: Path, knobs, session_id: str) -> None:
+    """Best-effort liveness refresh -- see the module docstring's
+    "Automatic heartbeat" section. Never raises: a missing/uninstalled
+    session board must not turn a successful event append into a hook
+    failure."""
+    try:
+        from ctx_core.layout import Layout
+        from ctx_core.sessions import SessionBoard, SessionNotFoundError
+
+        layout = Layout(root)
+        board = SessionBoard(
+            layout,
+            stale_seconds=knobs.session_stale_seconds,
+            heartbeat_seconds=knobs.session_heartbeat_seconds,
+        )
+        try:
+            board.heartbeat(session_id)
+        except SessionNotFoundError:
+            pass  # never registered on this board -- nothing to refresh
+    except Exception:
+        _log_error(root, f"heartbeat failed: {traceback.format_exc()}")
 
 
 if __name__ == "__main__":

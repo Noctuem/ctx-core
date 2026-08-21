@@ -272,6 +272,19 @@ def _cmd_sessions_release(args: argparse.Namespace) -> int:
     return EXIT_OK
 
 
+def _cmd_sessions_heartbeat(args: argparse.Namespace) -> int:
+    layout = Layout(args.root)
+    knobs = Knobs.load(layout.root)
+    board = _session_board(layout, knobs)
+    try:
+        board.heartbeat(args.session_id)
+    except SessionNotFoundError:
+        print(f"No live session named '{args.session_id}'.", file=sys.stderr)
+        return EXIT_ERROR
+    print(f"Heartbeat refreshed for '{args.session_id}'.")
+    return EXIT_OK
+
+
 # --- intake -------------------------------------------------------------
 
 
@@ -466,6 +479,14 @@ def build_parser() -> argparse.ArgumentParser:
     sessions_release_parser.add_argument("session_id")
     _add_root_option(sessions_release_parser)
     sessions_release_parser.set_defaults(handler=_cmd_sessions_release)
+
+    sessions_heartbeat_parser = sessions_sub.add_parser(
+        "heartbeat",
+        help="Refresh a live session's heartbeat so it isn't swept as stale.",
+    )
+    sessions_heartbeat_parser.add_argument("session_id")
+    _add_root_option(sessions_heartbeat_parser)
+    sessions_heartbeat_parser.set_defaults(handler=_cmd_sessions_heartbeat)
 
     # intake
     intake_parser = subparsers.add_parser(

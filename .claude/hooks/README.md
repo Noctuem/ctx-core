@@ -16,6 +16,14 @@ Appends one line to this corpus's event log (`var/log/events.jsonl`, see
 hash-chained record of what happened without anyone remembering to log it
 by hand.
 
+Also heartbeats this session on the live-session board (`ctx_core.sessions`),
+if it's already registered there -- since this hook fires on every tool
+call, it doubles as the liveness pulse a genuinely long-lived session needs
+between `SessionStart` events (which only fire once per session, or on
+resume/clear) to avoid the `session_stale_seconds` sweep. A session the
+board has never seen (`SessionNotFoundError`) is a no-op, not a failure --
+same fail-open contract as everything else here.
+
 ## `ctx_session_start_hook.py` — `SessionStart`
 
 Registers this session on the live-session board (`var/sessions/live/`,

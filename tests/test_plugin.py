@@ -362,6 +362,66 @@ def test_hook_appends_event_when_engine_importable(tmp_path: Path):
     assert ok, f"chain broke at line {first_break}"
 
 
+def test_hook_heartbeats_an_already_registered_session(tmp_path: Path):
+    """Automatic heartbeat (TODO Medium finding): a `PostToolUse` firing
+    for a session that's already on the board must refresh its
+    `heartbeat_at` -- this is what keeps a long-lived session off the
+    stale sweep without any user action."""
+    corpus = tmp_path / "corpus"
+    _make_corpus(corpus)
+    from ctx_core.layout import Layout
+    from ctx_core.sessions import SessionBoard
+
+    board = SessionBoard(Layout(corpus))
+    board.register("hb-session-1", "a long-lived session")
+    before = json.loads(
+        (corpus / "var" / "sessions" / "live" / "hb-session-1.json").read_text(encoding="utf-8")
+    )["heartbeat_at"]
+
+    import time as _time
+
+    _time.sleep(0.01)
+
+    env = dict(os.environ)
+    env["PYTHONPATH"] = str(REPO_ROOT)
+    payload = {
+        "cwd": str(corpus),
+        "hook_event_name": "PostToolUse",
+        "tool_name": "Bash",
+        "session_id": "hb-session-1",
+    }
+    result = _run_hook(payload, cwd=tmp_path, env=env)
+
+    assert result.returncode == 0, result.stderr
+    after = json.loads(
+        (corpus / "var" / "sessions" / "live" / "hb-session-1.json").read_text(encoding="utf-8")
+    )["heartbeat_at"]
+    assert after != before
+
+
+def test_hook_heartbeat_tolerates_an_unregistered_session(tmp_path: Path):
+    """A `session_id` the board has never seen (SessionStart hook not
+    wired, or a fresh board) must not turn the event append into a
+    failure -- `SessionNotFoundError` is swallowed."""
+    corpus = tmp_path / "corpus"
+    _make_corpus(corpus)
+    env = dict(os.environ)
+    env["PYTHONPATH"] = str(REPO_ROOT)
+    payload = {
+        "cwd": str(corpus),
+        "hook_event_name": "PostToolUse",
+        "tool_name": "Bash",
+        "session_id": "never-registered",
+    }
+    result = _run_hook(payload, cwd=tmp_path, env=env)
+
+    assert result.returncode == 0, result.stderr
+    assert not (corpus / "var" / "sessions" / "live" / "never-registered.json").exists()
+    # the event itself still landed -- heartbeat failure never blocks it
+    events_path = corpus / "var" / "log" / "events.jsonl"
+    assert events_path.is_file()
+
+
 def test_hook_fails_open_when_engine_not_importable(tmp_path: Path):
     corpus = tmp_path / "corpus"
     _make_corpus(corpus)
