@@ -34,6 +34,10 @@
   confirmed (0.1.0 on PATH, ran/not degraded), sessions docstring/Knobs,
   age-key pin, history stamp fixed; three items shelved with reasons.
   VERSION 0.2.3. Open: only the two [human] items (PyPI, marketplace).
+  Session 9 (2026-08-21) was a manager session only: ctx-build Waves 1–5
+  built through /sia:build from here (all ten modules, 265 tests, pushed to
+  private Gitea); no engine change; two soft dogfood notes in the log
+  (`ctx init --answers {}` bootstrap path, thin `ctx pack` on a young corpus).
 - **Next:** [human] PyPI publish 0.2.3 + marketplace listing. Engineering
   backlog is empty; new work arrives via dogfood findings or the ctx-build
   sibling (spec staged in the hub `new/` lane, private Gitea first). OQ1

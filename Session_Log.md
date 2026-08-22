@@ -178,3 +178,21 @@ path signal), intake completion interview (no signal). PyPI + marketplace stay
 ctx-build spec with a 10-module graph (hub new/ctx-build.spec.md, c4064d2);
 noctuem ruled private Gitea first, mirror later. Next: /sia:new-spec →
 /sia:new-project → /sia:build for ctx-build.
+
+## Session 9 — 2026-08-21 — manager session: ctx-build Waves 1–5 built through /sia:build — ~100K orchestrator + ~2.0M agent tokens
+
+No engine change in this repo. /sia:build invoked here; ctx-core's own graph
+is fully built (14/14 done.md, both specs implemented), so the live target was
+the sibling ctx-build (its Wave 0 was managed from Session 8). Board claimed
+(Session 9, CLAUDE.md/Session_Log.md/TODO.md) for the arc; released at close.
+Agentic full run: ten Sonnet workers + three fix workers, one merge gate per
+wave in-session; all ten modules landed (ledger, roles, router, verify-env,
+cli, runner, proof-manual, proof-auto + fixes), final gate 265 passed / 9
+skipped / 1 xfail, hygiene clean, pushed to private Gitea. Dogfood signals
+for THIS repo from the run: (1) `ctx init --root T --answers {}` is a clean
+non-interactive bootstrap — ctx-build's `init` relies on it; (2) `ctx pack` on
+a young corpus returned 230 tokens (profile + README) — thin manifest for a
+builder brief, expected but worth watching as intake accrues; (3) the
+sessions board worked as a presence signal for a cross-repo manager session
+again — OQ1 unchanged. Drift written to the hub spec; ctx-build handoff +
+TODO carry the rest.
