@@ -196,3 +196,4 @@ builder brief, expected but worth watching as intake accrues; (3) the
 sessions board worked as a presence signal for a cross-repo manager session
 again — OQ1 unchanged. Drift written to the hub spec; ctx-build handoff +
 TODO carry the rest.
+Addendum (same session): ctx-build's two High gaps closed by one more worker pass (C4 guard, proposals home; 289 tests); verification walked as a report; NOT shipped by noctuem's call (spec stays current/, registry stays building). Board released.
