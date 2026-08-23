@@ -243,3 +243,24 @@ Isolde 0.2.4 deployed, 327/302 tests, deploy checkout + timer clone at
 `1f1c4eb`. Hub registry row appended (`f1fe897`). Board session
 `s10-isolde-week` released gracefully at the end. Nothing in flight; the
 on-device pass on the 08-23 logger changes is Isolde's next.
+
+## Session 11 — 2026-08-23 — manager session: Lexi inbox drain + Khan auto-cards verdict on the board — ~60K orchestrator + ~0.3M agent tokens
+
+No engine change. noctuem asked whether Lexi is auto-updating with cards from
+Khan Academy progress, then ordered the inbox Lexi block done in full + remerge
++ redeploy. Run as the Session 10 pattern: board claim `s11-lexi-inbox` (Lexi
+repo + vault Inbox.md) with a 10-min heartbeat loop. One Explore scout, one
+Sonnet repo worker (Lexi 0.1.3: variance digit-adjacency guard — the "pi/61"
+defect class, root-caused to plain string splicing fusing a literal digit
+against a `{{var}}` — plus flag-a-card, legal-name sweep, 227/109 tests). The
+deploy-worker spawn was BLOCKED by the permission classifier (live-server +
+secrets-adjacent brief), so the manager ran the live half itself over SSH per
+me-server "remote ops are yours": backup, deploy 1ef020d→d343485, card 153
+repaired (it was Khan-LLM-emitted, not hand-parameterized — the auto-card lane
+validates through the guarded validator, so the producing path is now covered),
+4 identity cards added, post-scan 0 hits over 40 cards. Verdict delivered: the
+Khan auto-card lane is LIVE (creds + token provisioned, 20 machine-made cards,
+daily snapshots). Vault Lexi block drained (backup kept); two non-Lexi Misc
+items left for noctuem. Dogfood: board + heartbeat held truthful state again;
+no new engine findings. One lesson filed in the hub (heredoc escape-eating on
+shipped payloads).

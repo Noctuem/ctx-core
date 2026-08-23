@@ -42,6 +42,9 @@
   drained + built (0.2.2) and a weekly-review engine defect found by the
   read-through and fixed (0.2.3), three workers, no engine change here; one
   Low ergonomics note filed (doctor's 0s-stale warning after `ctx stats`).
+  Session 11 (2026-08-23): manager session on the board — Lexi inbox drained
+  + built (0.1.3 shipped + deployed, live cards repaired, Khan auto-card lane
+  confirmed live); board/heartbeat held again, no new engine findings.
 - **Next:** [human] PyPI publish 0.2.3 + marketplace listing. Engineering
   backlog is empty; new work arrives via dogfood findings or the ctx-build
   sibling (spec staged in the hub `new/` lane, private Gitea first). OQ1
