@@ -197,3 +197,34 @@ sessions board worked as a presence signal for a cross-repo manager session
 again — OQ1 unchanged. Drift written to the hub spec; ctx-build handoff +
 TODO carry the rest.
 Addendum (same session): ctx-build's two High gaps closed by one more worker pass (C4 guard, proposals home; 289 tests); verification walked as a report; NOT shipped by noctuem's call (spec stays current/, registry stays building). Board released.
+
+## Session 10 — 2026-08-23 — manager session: Isolde weekly-review read-through + inbox drain/build on the board — ~75K orchestrator + ~600K agent tokens
+
+noctuem's order: "review Isolde with you and look at the suggested changes to
+my fitness plan; build the Isolde changes in the inbox; use the new ctx system
+for all of it." Run as the Session 3/4 pattern: this corpus as the monitoring
+layer (`ctx stats` refresh, board claim `s10-isolde-week` with intent + four
+claimed paths, `ctx sessions heartbeat` from a 10-min background loop — the
+CLI the 0.2.1 arc added, exercised live for the first time), three workers,
+no direct work. Worker 1 (Sonnet, read-only) pulled Saturday's review #2 off
+the server + the athlete framework and flagged two prescriptions; on
+re-verification one flag withdrew (a 25 lb × RPE 10 set inside the 14-day
+window) and one CONFIRMED as an engine defect — `review.js` keyed
+prescriptions per exercise_id, so a squat programmed at 200 and 160 in two
+slots got one verdict ("200→165": the clean slot cut, the failing slot
+raised). Worker 2 (Opus) drained the 7 Isolde inbox items (backup, emptied to
+header, TODO append own commit) and built all of them — analyzer now sees
+skipped + failed sets (it saw neither), two flys re-stamped dumbbell on the
+live DB (25 slots, backed up, idempotent), delete-whole-movement, assist
+button gone + card overflow fixed, superset linking rebuilt as between-card
+connectors with 3+ chains, hand-added slots carry default RPE; Isolde 0.2.2
+deployed, 294→311 / 281→299 tests. Worker 3 (Opus) fixed the review keying
+per (exercise, programmed weight) family + scoped RPE/rep signals to the
+family weight, capped a REDUCE at a 10% trim (a second instance of the same
+class surfaced live: "Bench 185→45" from two 45 lb bar sets), 311→319 tests,
+Isolde 0.2.3 deployed, timer clone pulled, corrected review #4 built via the
+API (no Discord post, nothing answered). Sign-off on #4 is noctuem's — pending
+at the time of this entry.
+Dogfood notes: `ctx pack` on this engine repo is board-only (no `notes/` here,
+only pinned files packed — expected, not a defect); heartbeat CLI + board +
+stats held truthful state through a three-worker arc; nothing new to file.

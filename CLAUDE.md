@@ -38,6 +38,10 @@
   built through /sia:build from here (all ten modules, 265 tests, pushed to
   private Gitea); no engine change; two soft dogfood notes in the log
   (`ctx init --answers {}` bootstrap path, thin `ctx pack` on a young corpus).
+  Session 10 (2026-08-23): manager session on the board again — Isolde inbox
+  drained + built (0.2.2) and a weekly-review engine defect found by the
+  read-through and fixed (0.2.3), three workers, no engine change here; one
+  Low ergonomics note filed (doctor's 0s-stale warning after `ctx stats`).
 - **Next:** [human] PyPI publish 0.2.3 + marketplace listing. Engineering
   backlog is empty; new work arrives via dogfood findings or the ctx-build
   sibling (spec staged in the hub `new/` lane, private Gitea first). OQ1

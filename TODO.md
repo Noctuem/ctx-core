@@ -12,6 +12,12 @@
 
 ## Low
 
+- [ ] doctor's stats-staleness warning fires at "0s of newer activity" when `ctx stats`
+  and `ctx doctor` run back-to-back — the stats run's own event (or doctor's) is what
+  makes the products "stale". Exclude the stats/doctor bookkeeping events from the
+  staleness clock, or add a small grace window. Ergonomics, not corruption.
+  [dogfood Session 10, 2026-08-23]
+
 ## Shelved
 - [ ] Hook upgrade path: switch .claude/hooks event append from package
   import to the `ctx` console script now that the CLI exists [2026-08-18] — **SHELVED 2026-08-21 [noctuem]: the import path stays; a subprocess per tool call taxes every tool use and the hooks already fail open if the import fails. Reopen only if the package ever can't be imported from the hook env.**
