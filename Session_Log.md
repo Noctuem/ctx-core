@@ -228,3 +228,18 @@ at the time of this entry.
 Dogfood notes: `ctx pack` on this engine repo is board-only (no `notes/` here,
 only pinned files packed — expected, not a defect); heartbeat CLI + board +
 stats held truthful state through a three-worker arc; nothing new to file.
+
+### Session 10 addendum — sign-off + three follow-up orders landed
+
+noctuem ruled on the four calls: review #4 YES, core RPE targets YES, hand-added
+blanks leave, assist toggle bring back. One more Opus worker (sequential, the
+repo's single writer): `answer yes` on #4 — applied 76 / skipped 0, weeks 5–8
+only, trained weeks byte-identical (squat 160-family → 155, 200-family held —
+the case the fix existed to prove); #2/#3 declined as bookkeeping; RPE 8
+stamped on the 16 untrained core slots (source + seed JSON fixed for future
+re-seeds, idempotent script, second run wrote nothing); assist toggle restored
+inside the wrapping row with the overflow fix standing (360/390 shots clean).
+Isolde 0.2.4 deployed, 327/302 tests, deploy checkout + timer clone at
+`1f1c4eb`. Hub registry row appended (`f1fe897`). Board session
+`s10-isolde-week` released gracefully at the end. Nothing in flight; the
+on-device pass on the 08-23 logger changes is Isolde's next.
