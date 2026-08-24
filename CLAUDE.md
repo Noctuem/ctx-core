@@ -38,6 +38,9 @@
   built through /sia:build from here (all ten modules, 265 tests, pushed to
   private Gitea); no engine change; two soft dogfood notes in the log
   (`ctx init --answers {}` bootstrap path, thin `ctx pack` on a young corpus).
+  Same arc 2026-08-23: ctx-build's loop closed LIVE from here (sweeps 5–7,
+  router oscillation-resolution fix, terminate + handoff reached; ctx-build
+  Session 4). Its ship gate: two real-target builds.
   Session 10 (2026-08-23): manager session on the board again — Isolde inbox
   drained + built (0.2.2) and a weekly-review engine defect found by the
   read-through and fixed (0.2.3), three workers, no engine change here; one
