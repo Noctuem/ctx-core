@@ -264,3 +264,8 @@ daily snapshots). Vault Lexi block drained (backup kept); two non-Lexi Misc
 items left for noctuem. Dogfood: board + heartbeat held truthful state again;
 no new engine findings. One lesson filed in the hub (heredoc escape-eating on
 shipped payloads).
+Addendum 2 (2026-08-23): the ctx-build live proof closed from this manager
+session — sweeps 5–7 (router oscillation-resolution defect found+fixed, two
+human rulings executed, live double-green terminate + merge-gate handoff;
+328/9/0). ctx-build Session 4 has the full record. Ship gate: two real-target
+builds before implemented/registry flip.
