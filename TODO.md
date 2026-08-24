@@ -12,6 +12,11 @@
 
 ## Low
 
+- [ ] Budget knobs (`core_budget_tokens`, pack budget) are denominated in the engine's
+  `approx_tokens` (`len//4`) estimator units, not real tokens — real usage runs ~×1.63
+  higher (n=24 hub measurement), and any future estimator change silently reprices every
+  corpus's budgets. Consider: document the unit explicitly in Knobs, or accept a
+  real-token mode with a calibration factor. [dogfood SIA-v4 seed, 2026-08-24]
 - [ ] doctor's stats-staleness warning fires at "0s of newer activity" when `ctx stats`
   and `ctx doctor` run back-to-back — the stats run's own event (or doctor's) is what
   makes the products "stale". Exclude the stats/doctor bookkeeping events from the
