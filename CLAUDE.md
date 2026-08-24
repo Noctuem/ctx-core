@@ -48,11 +48,21 @@
   Session 11 (2026-08-23): manager session on the board — Lexi inbox drained
   + built (0.1.3 shipped + deployed, live cards repaired, Khan auto-card lane
   confirmed live); board/heartbeat held again, no new engine findings.
-- **Next:** [human] PyPI publish 0.2.3 + marketplace listing. Engineering
-  backlog is empty; new work arrives via dogfood findings or the ctx-build
-  sibling (spec staged in the hub `new/` lane, private Gitea first). OQ1
-  (cross-repo claims) stays the one open design item — decide before
-  ctx-build runs parallel builders.
+  Session 12 (2026-08-24): **THE PHASE-2 MIGRATION — noctuem's SIA hub now
+  RUNS ON THIS ENGINE.** SIA-v4 spec authored (plan-spec, 4 scouts), approved,
+  scaffolded, built agentic (7 modules incl. a defect-fixed converter, 339-file
+  corpus seed, doctor clean, verification 7/7 mutation-tested), and CUT OVER
+  attended the same arc (v3 frozen, path swapped, global config repointed,
+  server timer swapped, auto-memory retired machine-wide). Engine held the
+  whole way — zero engine defects hit during the migration; one Low finding
+  filed (budget knobs denominated in estimator units), and Session 10's
+  0s-stale doctor warning reproduced in the new hub day one (strengthens that
+  item). OQ1 RESOLVED by hub ruling: per-repo boards, no cross-repo bridge.
+- **Next:** [human] PyPI publish 0.2.3 + marketplace listing (the new hub runs
+  on the local editable install until then). Engineering backlog: the two Low
+  ergonomics items. New work arrives via dogfood (now including the hub
+  itself) or ctx-build (ship gate: two real-target builds — the SIA-v4 build
+  arguably qualifies as one; noctuem's call).
 - **Guard (PUBLIC repo):** never commit the repo owner's personal name or
   absolute local paths; author identity is Noctuem. Grep staged changes before
   every push.

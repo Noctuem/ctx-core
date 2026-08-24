@@ -269,3 +269,29 @@ session — sweeps 5–7 (router oscillation-resolution defect found+fixed, two
 human rulings executed, live double-green terminate + merge-gate handoff;
 328/9/0). ctx-build Session 4 has the full record. Ship gate: two real-target
 builds before implemented/registry flip.
+
+## Session 12 — 2026-08-24 — manager session: SIA-v4 authored, built, CUT OVER — the hub now runs on ctx-core — ~330K orchestrator + ~1.3M agent tokens
+
+The phase-2 migration, end to end in one arc. noctuem gave the GO ("I want to
+fully migrate"), ruled the forks (fresh private Gitea repo `SIA-v4`; corpus-first
+memory policy — auto-memory retired; no /sia:* command ports; full machinery port
+incl. Discord; hub-first fleet scope = OQ1 settled per-repo). Plan-spec flow: 4
+research scouts (spec shape, machinery census, rig converter coverage +
+acceptance-classifier autopsy, gated decisions), spec drafted by a worker,
+verified, approved. Scaffold: Gitea repo via API + hub lane bookkeeping. Agentic
+build, 7 modules / 7 workers / one commit each: converter (rig defects fixed —
+sia:pin translation, core-stub rewrite, live exclusions; 22 mutation-checked
+tests), machinery port (135 checks), corpus seed (339 files, doctor clean,
+real-token budget measurement — deviation ratified as Drift #1: knobs stay in
+engine-estimator units), global-repoint (12 memories drained via intake, 20
+skipped), cutover checklist (records staged-not-applied, Drift #2), verification
+(7 falsifiable checks, all mutation-tested). Then the CUTOVER, attended, same
+arc: v3 frozen `021399c` + parked, v4 took `C:\Users\caleb\SIA`, global config
+repointed (one plan miss found live: compose-guard lived inside the swapped
+folder — relocated to `~/.claude/scripts/`), 13 memory dirs retired, server
+timer swapped + pre-rename leftovers cleaned, staged records applied, checks
+7/7 in the live location. Engine verdict: HELD — zero engine defects during a
+full-corpus migration; findings filed: budget-unit denomination (TODO Low, this
+session), 0s-stale warning reproduced in the new hub (existing item
+strengthened). Open: hub checklist Step 7 fresh-session smoke + Step 8.2
+sign-off; then spec → implemented. OQ1 closed by the hub ledger.
