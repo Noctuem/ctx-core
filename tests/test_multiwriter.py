@@ -311,13 +311,8 @@ def test_map_coverage_names_uncovered_files_and_dangling_pointers(tmp_path: Path
 
 def test_root_files_are_excludable_and_never_map_uncovered(tmp_path: Path) -> None:
     layout = _corpus(tmp_path, with_map=True)
-    _write(tmp_path / "Session_Log.md", "# Log
-session one two three.
-")
-    _write(layout.core / "map.md", "# Map
-- alpha.md
-- beta.md
-")
+    _write(tmp_path / "Session_Log.md", "# Log\nsession one two three.\n")
+    _write(layout.core / "map.md", "# Map\n- alpha.md\n- beta.md\n")
     knobs = Knobs(hook_silence_min_doctor_runs=None)
     report = doctor(layout, knobs)
     assert not any(w.startswith("map coverage") for w in report.warnings), report.warnings
