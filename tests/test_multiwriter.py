@@ -309,6 +309,24 @@ def test_map_coverage_names_uncovered_files_and_dangling_pointers(tmp_path: Path
     assert not any(w.startswith("map") for w in doctor(layout, Knobs(doctor_map_check=False, hook_silence_min_doctor_runs=None)).warnings)
 
 
+def test_root_files_are_excludable_and_never_map_uncovered(tmp_path: Path) -> None:
+    layout = _corpus(tmp_path, with_map=True)
+    _write(tmp_path / "Session_Log.md", "# Log
+session one two three.
+")
+    _write(layout.core / "map.md", "# Map
+- alpha.md
+- beta.md
+")
+    knobs = Knobs(hook_silence_min_doctor_runs=None)
+    report = doctor(layout, knobs)
+    assert not any(w.startswith("map coverage") for w in report.warnings), report.warnings
+    log = EventLog(tmp_path / "scratch.jsonl")
+    m = pack("session one two", layout, Knobs(index_exclude=["Session_Log.md"]), event_log=log)
+    assert not any(e.path == "Session_Log.md" for e in m.entries)
+    assert not any(e.path == "Session_Log.md" for e, _ in m.dropped)
+
+
 def test_no_map_no_warning(tmp_path: Path) -> None:
     layout = _corpus(tmp_path)
     report = doctor(layout, Knobs(hook_silence_min_doctor_runs=None))

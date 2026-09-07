@@ -519,7 +519,7 @@ def _check_map_coverage(layout: Layout, entries: list[Entry], knobs: Knobs) -> l
     uncovered = sorted(
         e.path
         for e in entries
-        if e.tier == "notes"
+        if e.path.startswith("notes/")
         and not e.path.startswith(intake_prefix)
         and e.path not in text
         and e.path.rsplit("/", 1)[-1] not in text

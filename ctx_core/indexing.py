@@ -295,5 +295,14 @@ def build_index(
                 )
             )
 
-    entries.extend(_root_orientation_entries(layout, now, {e.path for e in entries}))
+    root_entries = _root_orientation_entries(layout, now, {e.path for e in entries})
+    for e in root_entries:
+        # `index_exclude` applies to the root orientation files too (0.2.4):
+        # an append-only session log named there must stay out of every pack.
+        if any(e.path.startswith(prefix) for prefix in exclude_prefixes):
+            census["excluded by caller-supplied prefix"] = (
+                census.get("excluded by caller-supplied prefix", 0) + 1
+            )
+            continue
+        entries.append(e)
     return entries, census
