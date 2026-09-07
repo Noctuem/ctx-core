@@ -51,11 +51,20 @@ import time
 from dataclasses import dataclass, field
 from datetime import datetime
 
+from pathlib import Path
+
 from .archive import SOURCES_KEY, archived_path_for_handle
 from .config import Knobs
-from .events import EventKind, EventLog, EventLogCorruptError, default_eventlog_path
+from .events import (
+    EventKind,
+    EventLog,
+    EventLogCorruptError,
+    eventlog_for,
+    eventlog_paths,
+    read_events,
+)
 from .indexing import FRONT_MATTER, Entry, build_index
-from .intake import intake_list
+from .intake import INTAKE_DIRNAME, intake_list
 from .layout import Layout
 
 # ==========================================================================
@@ -74,6 +83,23 @@ _FRONT_MATTER_KV = re.compile(r"^\s*([\w:.-]+)\s*:\s*(.*)$")
 #: `packer.Manifest.render`'s own drop-list cap in spirit (named, bounded,
 #: never silently truncated without saying so).
 FRESHNESS_MAX_NAMED = 5
+
+#: `kind` the Claude Code PostToolUse hook appends per tool call
+#: (`.claude/hooks/ctx_eventlog_hook.py`). Named here as a plain string,
+#: the same convention `stats.py` follows for kinds `EventKind` does not
+#: enumerate.
+HOOK_POST_TOOL_USE_KIND = "hook_post_tool_use"
+
+#: Map file the coverage check reads, relative to `layout.core`.
+MAP_FILENAME = "map.md"
+
+#: A bracketed path pointer in the map: `[notes/foo/bar.md]`,
+#: `[scripts/x.py]`. Only pointers with a recognizable file extension are
+#: checked, so ordinary prose in brackets is never mistaken for a path.
+_MAP_POINTER = re.compile(r"\[([\w][\w./ -]*?\.(?:md|py|txt|json|toml|sh|ps1|mjs|js|yaml|yml))\]")
+
+#: How many uncovered / dangling map entries a warning names outright.
+MAP_MAX_NAMED = 10
 
 
 # ==========================================================================
@@ -168,9 +194,45 @@ def _check_eventlog_chain(event_log: EventLog) -> list[str]:
     ]
 
 
+def _check_all_chains(paths: list[Path], own: EventLog) -> list[str]:
+    """Every chain file in the log directory must verify -- the shared
+    `events.jsonl` (frozen once a corpus goes per-writer) and each
+    `events-<writer>.jsonl`. `own` is checked even if it does not exist yet
+    (verifies trivially), so an injected fixture log is still covered.
+    """
+    failures: list[str] = []
+    seen: set[Path] = set()
+    for path in [*paths, own.path]:
+        key = Path(path).resolve() if Path(path).exists() else Path(path)
+        if key in seen:
+            continue
+        seen.add(key)
+        failures += _check_eventlog_chain(EventLog(path))
+    return failures
+
+
 # ==========================================================================
 # Index freshness (SOFT)
 # ==========================================================================
+
+
+def _last_ts_of_kind(events: list[dict], kind: str | None) -> float | None:
+    """Epoch timestamp of the newest event of `kind` (any kind when
+    `None`) in `events`, or `None` when there is none. Reads the merged
+    record set (`events.read_events`) so a per-writer corpus's checks see
+    every chain, not just this writer's.
+    """
+    last_ts: float | None = None
+    for record in events:
+        if kind is not None and record.get("kind") != kind:
+            continue
+        try:
+            ts = datetime.fromisoformat(record["ts"]).timestamp()
+        except (KeyError, TypeError, ValueError):
+            continue
+        if last_ts is None or ts > last_ts:
+            last_ts = ts
+    return last_ts
 
 
 def _last_context_assembled_ts(event_log: EventLog) -> float | None:
@@ -178,31 +240,14 @@ def _last_context_assembled_ts(event_log: EventLog) -> float | None:
     `event_log`, or `None` if the log is missing/empty or has never recorded
     one. A malformed line is skipped rather than raising — this is an
     advisory check, not the chain-integrity one (`_check_eventlog_chain`
-    already owns reporting corruption as a hard failure).
+    already owns reporting corruption as a hard failure). Kept for callers
+    that hold one `EventLog`; `doctor()` itself folds every chain via
+    `_last_ts_of_kind`.
     """
-    if not event_log.path.is_file():
-        return None
-    text = event_log.path.read_text(encoding="utf-8")
-    if not text:
-        return None
-    last_ts: float | None = None
-    for line in text.split("\n"):
-        if not line:
-            continue
-        try:
-            record = json.loads(line)
-        except json.JSONDecodeError:
-            continue
-        if not isinstance(record, dict) or record.get("kind") != EventKind.CONTEXT_ASSEMBLED.value:
-            continue
-        try:
-            last_ts = datetime.fromisoformat(record["ts"]).timestamp()
-        except (KeyError, TypeError, ValueError):
-            continue
-    return last_ts
+    return _last_ts_of_kind(read_events([event_log.path]), EventKind.CONTEXT_ASSEMBLED.value)
 
 
-def _check_index_freshness(entries: list[Entry], event_log: EventLog) -> list[str]:
+def _check_index_freshness(entries: list[Entry], event_log: EventLog, events: list[dict] | None = None) -> list[str]:
     """Has any indexed file changed since the last recorded pack? A corpus
     that has never been packed has nothing to compare against and is not
     warned about — only drift AFTER a known-good pack is "stale," never the
@@ -211,7 +256,11 @@ def _check_index_freshness(entries: list[Entry], event_log: EventLog) -> list[st
     reflects a genuinely stale on-disk index — only a nudge that the working
     set a session already loaded may not reflect the latest edits.
     """
-    last_pack_ts = _last_context_assembled_ts(event_log)
+    last_pack_ts = (
+        _last_ts_of_kind(events, EventKind.CONTEXT_ASSEMBLED.value)
+        if events is not None
+        else _last_context_assembled_ts(event_log)
+    )
     if last_pack_ts is None:
         return []
     stale = sorted(
@@ -373,36 +422,13 @@ def _check_stale_sessions(layout: Layout, knobs: Knobs) -> list[str]:
 
 def _last_event_ts(event_log: EventLog) -> float | None:
     """Epoch timestamp of the most recent event of ANY kind in `event_log`.
-    Generalizes `_last_context_assembled_ts` above (which filters to one
-    kind) -- kept as a separate, small function rather than adding a `kind`
-    parameter to the existing one, so the freshness check's already-tested
-    behavior is untouched.
+    Single-log form of `_last_ts_of_kind(..., None)`, kept for callers that
+    hold one `EventLog`.
     """
-    if not event_log.path.is_file():
-        return None
-    text = event_log.path.read_text(encoding="utf-8")
-    if not text:
-        return None
-    last_ts: float | None = None
-    for line in text.split("\n"):
-        if not line:
-            continue
-        try:
-            record = json.loads(line)
-        except json.JSONDecodeError:
-            continue
-        if not isinstance(record, dict):
-            continue
-        try:
-            ts = datetime.fromisoformat(record["ts"]).timestamp()
-        except (KeyError, TypeError, ValueError):
-            continue
-        if last_ts is None or ts > last_ts:
-            last_ts = ts
-    return last_ts
+    return _last_ts_of_kind(read_events([event_log.path]), None)
 
 
-def _check_stats_staleness(layout: Layout, event_log: EventLog) -> list[str]:
+def _check_stats_staleness(layout: Layout, event_log: EventLog, events: list[dict] | None = None) -> list[str]:
     """Advisory only. Compares `var/stats/summary.json`'s (m13) own
     `generated_at` against the most recent event of any kind already in the
     (same) event log -- "products are cheap, regenerate them" per the build
@@ -419,7 +445,9 @@ def _check_stats_staleness(layout: Layout, event_log: EventLog) -> list[str]:
     except (OSError, json.JSONDecodeError, KeyError, TypeError, ValueError):
         return []
 
-    last_event_ts = _last_event_ts(event_log)
+    last_event_ts = (
+        _last_ts_of_kind(events, None) if events is not None else _last_event_ts(event_log)
+    )
     if last_event_ts is None or last_event_ts <= generated_ts:
         return []
 
@@ -429,6 +457,99 @@ def _check_stats_staleness(layout: Layout, event_log: EventLog) -> list[str]:
         f"{age:.0f}s of newer event-log activity since they were last "
         "generated; run `ctx stats` to refresh (cheap, zero tokens)"
     ]
+
+
+# ==========================================================================
+# Hook-silence advisory (SOFT, 0.2.4)
+# ==========================================================================
+
+
+def _check_hook_silence(own_log: EventLog, knobs: Knobs) -> list[str]:
+    """Advisory only. Hooks are fail-open by design, which makes a hook
+    that never runs at all (wrong `python` on PATH, a settings file that
+    lost its hook block) invisible -- nothing errors, nothing logs. The
+    signature is unmistakable in THIS writer's own chain: sessions keep
+    ending with `ctx doctor` (the ritual) while not one tool-hook event
+    ever landed. `knobs.hook_silence_min_doctor_runs` sets how many ritual
+    runs of silence it takes; `None` disables the check for a corpus that
+    runs without hooks on purpose.
+    """
+    threshold = knobs.hook_silence_min_doctor_runs
+    if threshold is None:
+        return []
+    events = read_events([own_log.path])
+    n_doctor = sum(1 for e in events if e.get("kind") == EventKind.DOCTOR_RUN.value)
+    if n_doctor < int(threshold):
+        return []
+    if any(e.get("kind") == HOOK_POST_TOOL_USE_KIND for e in events):
+        return []
+    return [
+        f"hook silence: {n_doctor} doctor runs in this writer's chain ({own_log.path.name}) "
+        f"and not one {HOOK_POST_TOOL_USE_KIND} event -- the tool hooks are not firing here. "
+        "Check that the interpreter the hooks name resolves (`python` vs `py -3`) and that "
+        "the settings file still wires .claude/hooks/; set hook_silence_min_doctor_runs = "
+        "false in .ctxrc.toml to silence this on a hookless corpus"
+    ]
+
+
+# ==========================================================================
+# Map coverage advisory (SOFT, 0.2.4)
+# ==========================================================================
+
+
+def _check_map_coverage(layout: Layout, entries: list[Entry], knobs: Knobs) -> list[str]:
+    """Advisory only, and only when `core/map.md` exists. Two halves of one
+    law ("every add, move, or delete under notes/ edits the map in the same
+    commit"): (a) every indexed `notes/` file is named in the map, by full
+    root-relative path or by basename -- the New layer (`notes/intake/`) is
+    excepted, it is pre-map by definition; (b) every bracketed path pointer
+    in the map resolves on disk, relative to the corpus root or to `notes/`.
+    """
+    if not knobs.doctor_map_check:
+        return []
+    map_path = layout.core / MAP_FILENAME
+    if not map_path.is_file():
+        return []
+    try:
+        text = map_path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return []
+
+    intake_prefix = f"notes/{INTAKE_DIRNAME}/"
+    uncovered = sorted(
+        e.path
+        for e in entries
+        if e.tier == "notes"
+        and not e.path.startswith(intake_prefix)
+        and e.path not in text
+        and e.path.rsplit("/", 1)[-1] not in text
+    )
+    dangling = sorted(
+        {
+            pointer
+            for pointer in _MAP_POINTER.findall(text)
+            if not (layout.root / pointer).exists() and not (layout.notes / pointer).exists()
+        }
+    )
+
+    warnings: list[str] = []
+    if uncovered:
+        named = ", ".join(uncovered[:MAP_MAX_NAMED])
+        if len(uncovered) > MAP_MAX_NAMED:
+            named += f" (+{len(uncovered) - MAP_MAX_NAMED} more)"
+        warnings.append(
+            f"map coverage: {len(uncovered)} notes/ file(s) not named in core/{MAP_FILENAME}: "
+            f"{named} -- add a line per file (the law of the map)"
+        )
+    if dangling:
+        named = ", ".join(dangling[:MAP_MAX_NAMED])
+        if len(dangling) > MAP_MAX_NAMED:
+            named += f" (+{len(dangling) - MAP_MAX_NAMED} more)"
+        warnings.append(
+            f"map pointers: {len(dangling)} bracketed path(s) in core/{MAP_FILENAME} do not "
+            f"exist on disk: {named} -- repoint or remove them"
+        )
+    return warnings
 
 
 # ==========================================================================
@@ -444,23 +565,32 @@ def doctor(layout: Layout, knobs: Knobs, *, event_log: EventLog | None = None) -
     fixture log. The index is built exactly once and shared across every
     check that needs it, rather than each check re-walking the filesystem.
     """
-    entries, _census = build_index(layout)
-    log = event_log if event_log is not None else EventLog(default_eventlog_path(layout.root, knobs.eventlog_path))
+    entries, _census = build_index(layout, exclude_prefixes=tuple(knobs.index_exclude))
+    log = event_log if event_log is not None else eventlog_for(layout.root, knobs)
+    # Every chain in the log directory plus the (possibly injected) own log,
+    # merged: the read side of per-writer logs (0.2.4). With a single shared
+    # log this is exactly the one file it always was.
+    chain_paths = eventlog_paths(layout.root, knobs.eventlog_path)
+    if log.path not in chain_paths:
+        chain_paths = [*chain_paths, log.path]
+    events = read_events(chain_paths)
 
     intake_hard, intake_warn = _check_unrouted_intake(layout, knobs)
 
     hard_failures: list[str] = []
     hard_failures += _check_corpus_integrity(layout, entries)
-    hard_failures += _check_eventlog_chain(log)
+    hard_failures += _check_all_chains(chain_paths, log)
     hard_failures += _check_l1_budget(entries, knobs)
     hard_failures += intake_hard
 
     warnings: list[str] = []
-    warnings += _check_index_freshness(entries, log)
+    warnings += _check_index_freshness(entries, log, events)
     warnings += _check_template_state(layout)
     warnings += intake_warn
     warnings += _check_stale_sessions(layout, knobs)
-    warnings += _check_stats_staleness(layout, log)
+    warnings += _check_stats_staleness(layout, log, events)
+    warnings += _check_hook_silence(log, knobs)
+    warnings += _check_map_coverage(layout, entries, knobs)
 
     report = DoctorReport(hard_failures=hard_failures, warnings=warnings)
 

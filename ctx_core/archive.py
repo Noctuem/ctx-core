@@ -32,7 +32,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from .config import Knobs
-from .events import EventKind, EventLog, default_eventlog_path
+from .events import EventKind, EventLog, eventlog_for
 from .indexing import FRONT_MATTER, approx_tokens, build_index
 from .layout import Layout
 
@@ -163,8 +163,7 @@ def _default_event_log(layout: Layout) -> EventLog:
     # `Knobs.load(layout.root)` (a single cheap .ctxrc.toml read) rather
     # than assuming the hardcoded default, so a domain that customized
     # `eventlog_path` still gets its stub events in the right place.
-    knobs = Knobs.load(layout.root)
-    return EventLog(default_eventlog_path(layout.root, knobs.eventlog_path))
+    return eventlog_for(layout.root, Knobs.load(layout.root))
 
 
 # --- archive_note: the size-triggered primitive -----------------------------

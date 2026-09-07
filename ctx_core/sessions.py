@@ -47,7 +47,7 @@ from pathlib import Path, PurePosixPath
 from typing import Sequence
 
 from .config import Knobs
-from .events import EventLog, default_eventlog_path
+from .events import EventLog, eventlog_for
 from .layout import Layout
 
 # ==========================================================================
@@ -102,6 +102,35 @@ _RESERVED_SESSION_IDS = {".", ".."}
 #: starts with `<id>-` (e.g. `last_intent("a")` must not match `a-b.json`).
 _HISTORY_STAMP_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{6}\.\d+Z$")
 
+#: `_move_to_history` retries the live-file unlink this many times, this
+#: far apart, before giving up for THIS call. On Windows a second hook
+#: process (another session's PostToolUse sweep, an editor, a sync client)
+#: can hold the file open for a moment and `unlink` raises
+#: `PermissionError` (WinError 32) instead of waiting; seen live 2026-08-26.
+#: The history record is already written by then, so a final failure leaves
+#: the live file for the next sweep rather than aborting the caller's own
+#: register/heartbeat/claim.
+UNLINK_RETRIES = 5
+UNLINK_RETRY_INTERVAL_SECONDS = 0.05
+
+#: Live-file field naming the machine that owns a session. A live file
+#: only ever means "alive" on the host that wrote it -- when `var/sessions/`
+#: rides git, another machine's fresh file is a foreign session, never
+#: swept here (its own host sweeps it) but still listed and still able to
+#: raise a `check()` conflict. A pre-0.2.4 file with no host is treated as
+#: local, exactly as before.
+HOST_FIELD = "host"
+_HOST_SAFE = re.compile(r"[^a-z0-9-]+")
+
+
+def local_host() -> str:
+    """This machine's name as written into live files -- lowercased and
+    folded to `[a-z0-9-]`, the same folding `events.writer_id` uses.
+    """
+    import socket
+
+    return _HOST_SAFE.sub("-", (socket.gethostname() or "host").lower()).strip("-") or "host"
+
 
 class SessionNotFoundError(LookupError):
     """Raised when a method addressing an existing live session
@@ -130,6 +159,8 @@ class SessionEntry:
     pid: int
     stale: bool
     age_seconds: float
+    host: str = ""
+    foreign: bool = False
 
 
 @dataclass(frozen=True)
@@ -214,10 +245,10 @@ def _atomic_write_json(path: Path, data: dict) -> None:
 def _default_event_log(layout: Layout) -> EventLog:
     # Same pattern as `archive.py`'s `_default_event_log`: a fresh
     # `Knobs.load` (one cheap `.ctxrc.toml` read) so a domain that
-    # customized `eventlog_path` still gets SESSION_* events in the right
-    # place, without this module owning a `knobs` parameter of its own.
-    knobs = Knobs.load(layout.root)
-    return EventLog(default_eventlog_path(layout.root, knobs.eventlog_path))
+    # customized `eventlog_path` / `eventlog_per_writer` still gets
+    # SESSION_* events in the right place, without this module owning a
+    # `knobs` parameter of its own.
+    return eventlog_for(layout.root, Knobs.load(layout.root))
 
 
 # ==========================================================================
@@ -259,6 +290,13 @@ class SessionBoard:
             else resolved_knobs.session_heartbeat_seconds
         )
         self._event_log = event_log if event_log is not None else _default_event_log(layout)
+        self.host = local_host()
+
+    def _is_foreign(self, data: dict) -> bool:
+        """A live file another machine wrote (see `HOST_FIELD`). Missing
+        host = local (pre-0.2.4 file)."""
+        host = data.get(HOST_FIELD)
+        return bool(host) and host != self.host
 
     # --- directories -----------------------------------------------------
 
@@ -326,7 +364,14 @@ class SessionBoard:
             stamp = record["ended_at"].replace("+00:00", "Z").replace(":", "")
             dest = self.history_dir / f"{live_path.stem}-{stamp}{live_path.suffix}"
         _atomic_write_json(dest, record)
-        live_path.unlink(missing_ok=True)
+        for attempt in range(UNLINK_RETRIES):
+            try:
+                live_path.unlink(missing_ok=True)
+                break
+            except PermissionError:
+                if attempt == UNLINK_RETRIES - 1:
+                    break  # leave it for the next sweep -- see UNLINK_RETRIES
+                time.sleep(UNLINK_RETRY_INTERVAL_SECONDS)
         return record
 
     # --- sweep -------------------------------------------------------------
@@ -347,6 +392,8 @@ class SessionBoard:
             data = self._read_session_file(path)
             if data is None:
                 continue
+            if self._is_foreign(data):
+                continue  # another host's session -- its own board sweeps it
             if not self._is_stale(data, now):
                 continue
             record = self._move_to_history(path, data, reason="expired")
@@ -379,10 +426,12 @@ class SessionBoard:
             "intent": intent,
             "claims": [],
             "pid": os.getpid(),
+            HOST_FIELD: self.host,
         }
         _atomic_write_json(self._live_path(session_id), data)
         self._event_log.append(
-            SESSION_START, {"session_id": session_id, "intent": intent, "pid": data["pid"]}
+            SESSION_START,
+            {"session_id": session_id, "intent": intent, "pid": data["pid"], HOST_FIELD: self.host},
         )
 
     def heartbeat(self, session_id: str) -> None:
@@ -494,7 +543,14 @@ class SessionBoard:
             data = self._read_session_file(path)
             if data is None:
                 continue
-            entries.append(self._entry_from_data(data, now, stale=False))
+            foreign = self._is_foreign(data)
+            # A foreign file is never swept here, so its staleness is
+            # reported from its heartbeat rather than from a sweep.
+            entries.append(
+                self._entry_from_data(
+                    data, now, stale=foreign and self._is_stale(data, now), foreign=foreign
+                )
+            )
         entries.sort(key=lambda e: e.session_id)
         return entries
 
@@ -513,6 +569,8 @@ class SessionBoard:
             data = self._read_session_file(live_path)
             if data is None:
                 continue
+            if self._is_foreign(data) and self._is_stale(data, time.time()):
+                continue  # a foreign file past its heartbeat blocks nothing
             for claimed in data.get("claims", []):
                 if _paths_overlap(target, claimed):
                     return Conflict(
@@ -523,7 +581,7 @@ class SessionBoard:
         return None
 
     @staticmethod
-    def _entry_from_data(data: dict, now: float, *, stale: bool) -> SessionEntry:
+    def _entry_from_data(data: dict, now: float, *, stale: bool, foreign: bool = False) -> SessionEntry:
         return SessionEntry(
             session_id=data.get("session_id", ""),
             started_at=data.get("started_at", ""),
@@ -533,4 +591,6 @@ class SessionBoard:
             pid=data.get("pid", -1),
             stale=stale,
             age_seconds=SessionBoard._age_seconds(data, now),
+            host=str(data.get(HOST_FIELD) or ""),
+            foreign=foreign,
         )

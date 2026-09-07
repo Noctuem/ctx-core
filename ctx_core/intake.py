@@ -33,7 +33,7 @@ from pathlib import Path
 
 from .archive import archive_note
 from .config import Knobs
-from .events import EventLog, default_eventlog_path
+from .events import EventLog, eventlog_for
 from .indexing import FRONT_MATTER, SECONDS_PER_DAY
 from .layout import Layout
 
@@ -165,8 +165,7 @@ def _default_event_log(layout: Layout) -> EventLog:
     # fresh `Knobs.load(layout.root)` rather than assuming the hardcoded
     # default, so a domain that customized `eventlog_path` still gets intake
     # events routed correctly.
-    knobs = Knobs.load(layout.root)
-    return EventLog(default_eventlog_path(layout.root, knobs.eventlog_path))
+    return eventlog_for(layout.root, Knobs.load(layout.root))
 
 
 def _parse_ts(value: str) -> datetime:

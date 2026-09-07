@@ -1,11 +1,10 @@
 # Project context
 
-This project's context lives under `core/` and `notes/`, managed by
-[ctx-core](https://github.com/Noctuem/ctx-core).
-
+@AGENTS.md
 @core/card.md
 @core/map.md
 @core/profile.md
 
-Run `ctx pack "<task>"` for a budgeted context manifest, and `ctx doctor` to
-check corpus health.
+`AGENTS.md` is the tool-neutral bootstrap every agent reads; this file only
+imports it and the pinned core for Claude Code. Run `ctx pack "<task>"` for a
+budgeted context manifest, and `ctx doctor` to check corpus health.

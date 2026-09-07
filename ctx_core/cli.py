@@ -28,7 +28,7 @@ from ctx_core.domains import (
     DomainPathNotFoundError,
     DomainRegistry,
 )
-from ctx_core.events import EventLog, default_eventlog_path
+from ctx_core.events import eventlog_for, writer_id
 from ctx_core.init import run_interview
 from ctx_core.intake import DEFAULT_SOURCE, VALID_SOURCES
 from ctx_core.intake import intake_add as run_intake_add
@@ -169,7 +169,7 @@ def _cmd_archive_stub(args: argparse.Namespace) -> int:
 def _cmd_init(args: argparse.Namespace) -> int:
     layout = Layout(args.root)
     knobs = Knobs.load(layout.root)
-    event_log = EventLog(default_eventlog_path(layout.root, knobs.eventlog_path))
+    event_log = eventlog_for(layout.root, knobs)
     if args.answers is not None:
         answers = json.loads(Path(args.answers).read_text(encoding="utf-8"))
         run_interview(layout, answers=answers, event_log=event_log)
@@ -236,12 +236,33 @@ def _cmd_sessions_list(args: argparse.Namespace) -> int:
         print("No sessions recorded.")
         return EXIT_OK
     for e in entries:
-        status = "just-expired" if e.stale else "live"
+        status = ("stale" if e.stale else "live") if e.foreign else ("just-expired" if e.stale else "live")
+        where = f"\thost={e.host or '?'}{' (foreign)' if e.foreign else ''}"
         claims = ", ".join(e.claims) if e.claims else "(none)"
         print(
-            f"{e.session_id}\t{status}\tage={e.age_seconds:.0f}s\t"
+            f"{e.session_id}\t{status}{where}\tage={e.age_seconds:.0f}s\t"
             f"intent={e.intent!r}\tclaims={claims}"
         )
+    return EXIT_OK
+
+
+def _cmd_sessions_start(args: argparse.Namespace) -> int:
+    """Register a session with no claim -- the front door for an agent
+    whose harness has no hooks (any non-Claude-Code tool, a plain shell):
+    `ctx sessions start <id> --intent "..."`, then `heartbeat` during long
+    work and `release` at the end. Idempotent: an id already live is
+    heartbeated, not re-registered.
+    """
+    layout = Layout(args.root)
+    knobs = Knobs.load(layout.root)
+    board = _session_board(layout, knobs)
+    try:
+        board.heartbeat(args.session_id)
+        print(f"'{args.session_id}' already live -- heartbeat refreshed.")
+    except SessionNotFoundError:
+        intent = args.intent or board.last_intent(args.session_id) or ""
+        board.register(args.session_id, intent)
+        print(f"Registered '{args.session_id}' on {board.host} (writer {writer_id(layout.root)}).")
     return EXIT_OK
 
 
@@ -341,7 +362,7 @@ def _cmd_stats(args: argparse.Namespace) -> int:
     layout = Layout(args.root)
     knobs = Knobs.load(layout.root)
     since_days = args.since if args.since is not None else knobs.stats_window_days
-    event_log = EventLog(default_eventlog_path(layout.root, knobs.eventlog_path))
+    event_log = eventlog_for(layout.root, knobs)
     report = compute_stats(layout, knobs, since_days=since_days, event_log=event_log)
     paths = write_products(report, layout)
     print(report.render_md(), end="")
@@ -482,6 +503,17 @@ def build_parser() -> argparse.ArgumentParser:
     )
     _add_root_option(sessions_list_parser)
     sessions_list_parser.set_defaults(handler=_cmd_sessions_list)
+
+    sessions_start_parser = sessions_sub.add_parser(
+        "start",
+        help="Register a session (no claim) -- for agents whose harness has no hooks.",
+    )
+    sessions_start_parser.add_argument("session_id")
+    sessions_start_parser.add_argument(
+        "--intent", default="", help="What this session is for (recovered from history if omitted)."
+    )
+    _add_root_option(sessions_start_parser)
+    sessions_start_parser.set_defaults(handler=_cmd_sessions_start)
 
     sessions_claim_parser = sessions_sub.add_parser(
         "claim", help="Claim one or more paths for a session (registers it if new)."

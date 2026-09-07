@@ -16,7 +16,7 @@ and the file.
 from __future__ import annotations
 
 import tomllib
-from dataclasses import dataclass, fields
+from dataclasses import dataclass, field, fields
 from pathlib import Path
 from typing import Any
 
@@ -71,10 +71,46 @@ class Knobs:
     retrieval_decisions_default: bool = False
     """Default for the packer's `--decisions` retrieval flag."""
 
+    # --- pack (0.2.4): index scope + ranking width ---
+    index_exclude: list[str] = field(default_factory=list)
+    """Root-relative path prefixes (forward-slash form) that never become
+    pack candidates -- e.g. an append-only session log at the root that
+    would otherwise crowd every pack with material about the corpus
+    itself. Passed straight to `indexing.build_index(exclude_prefixes=)`
+    by the packer, doctor, and stats, so all three see one index."""
+
+    retrieval_k: int = 12
+    """How many ranked (non-pinned) candidates are even considered for
+    budgeting, independent of the token budget. The engine's tuned default
+    is 12; a corpus of a few hundred notes with a large budget may want
+    more, or the budget stops being the binding constraint and the pack
+    stops growing at 12 files."""
+
     # --- eventlog (m5) ---
     eventlog_path: str = "var/log/"
     """Path, relative to the corpus root, where the event log is written.
     Gitignored by default; a domain may opt into committing it."""
+
+    eventlog_per_writer: bool = False
+    """Write this clone's events to its own chain file,
+    `events-<writer_id>.jsonl` (see `events.writer_id`), instead of the
+    shared `events.jsonl`. Turn this on for any corpus that commits
+    `var/log/` and is appended to from more than one clone or machine: a
+    hash chain has one tail, so two writers on one file cannot both
+    survive a merge. Readers fold every `events*.jsonl` either way."""
+
+    hook_silence_min_doctor_runs: int | None = 3
+    """`ctx doctor` soft check: warn when THIS writer's chain holds at
+    least this many `doctor_run` events but not one `hook_post_tool_use`
+    event -- the signature of tool hooks that are wired but never fire
+    (wrong interpreter on PATH, a settings file that lost its hook block).
+    `None` disables the check for a corpus that runs without hooks."""
+
+    doctor_map_check: bool = True
+    """`ctx doctor` soft check: every `notes/` file (the New layer,
+    `notes/intake/`, excepted) must be named in `core/map.md`, and every
+    bracketed path pointer in the map must resolve on disk. Only runs when
+    `core/map.md` exists; a corpus without a map is never warned."""
 
     # --- yield-bridge (m6): ctx-yield pass-through ---
     yield_exact: bool = False
@@ -113,6 +149,13 @@ class Knobs:
     spec Module 14 item 4). Mirrors `archive_stub_threshold_tokens`'s scale:
     small enough that a handful of fresh, unrouted notes doesn't eat a pack
     budget on its own."""
+
+    intake_always_include_max_items: int | None = None
+    """How many unrouted New-layer items (newest first) are pinned into
+    every pack. `None` (the default) pins every under-cap item, which is
+    right for a queue that is routed promptly; a corpus that lets the
+    queue grow pins its newest N and leaves the rest to ordinary ranking,
+    so a backlog cannot flood every manifest with zero-relevance notes."""
 
     # --- stats (m13): zero-token aggregation + products ---
     stats_window_days: int = 30

@@ -33,13 +33,13 @@ import json
 import re
 import statistics
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 from .config import Knobs
-from .events import EventKind, EventLog, default_eventlog_path
+from .events import EventKind, EventLog, eventlog_paths, read_events
 from .indexing import FRONT_MATTER, Entry, build_index
 from .layout import Layout
 from .yield_bridge import NOT_INSTALLED_HINT, YIELD_SCAN_KIND, dead_weight_map, yield_scan
@@ -494,11 +494,12 @@ def compute_stats(
     effective_now = now if now is not None else time.time()
     window_start = effective_now - float(since_days) * 86_400 if since_days is not None else None
 
-    entries, _census = build_index(layout)
+    entries, _census = build_index(layout, exclude_prefixes=tuple(knobs.index_exclude))
     all_paths = sorted(e.path for e in entries)
 
-    log_path = default_eventlog_path(layout.root, knobs.eventlog_path)
-    events = _read_events(log_path)
+    # Every chain file in the log directory -- the shared `events.jsonl`
+    # plus each per-writer `events-<writer>.jsonl` (0.2.4) -- merged by ts.
+    events = read_events(eventlog_paths(layout.root, knobs.eventlog_path))
     windowed = [e for e in events if _in_window(e, window_start)]
 
     packs = _fold_packs(windowed, all_paths)

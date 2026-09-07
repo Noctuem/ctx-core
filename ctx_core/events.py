@@ -13,23 +13,36 @@ sidecar lock file for the whole read-tail / compute / write-line critical
 section, so two processes racing against the same log file cannot
 interleave writes or corrupt the chain.
 
-Scope: single-machine, single-clone integrity ONLY. Cross-clone or
-cross-device sync (e.g. two machines both appending to copies of the same
-log and later merging) is explicitly OUT of scope -- this module makes no
-attempt to reconcile diverged chains.
+Scope: ONE chain is single-machine, single-clone integrity ONLY. Two
+clones appending to copies of the same chain and later merging through
+git cannot both be right -- a chain has exactly one tail -- and this
+module makes no attempt to reconcile diverged chains.
+
+Per-writer logs (0.2.4) are how a corpus that DOES ride git across
+machines stays honest: with `Knobs.eventlog_per_writer` on, every clone
+appends to its own file, `events-<writer_id>.jsonl` (see `writer_id`),
+so no two writers ever share a tail and a merge is a pure union of
+files. Readers (`doctor`, `stats`) fold every `events*.jsonl` in the log
+directory (`eventlog_paths`); a pre-0.2.4 shared `events.jsonl` is left
+in place as a frozen, still-verified chain.
 """
 
 from __future__ import annotations
 
 import hashlib
 import json
+import re
+import socket
 import sys
 import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
-from typing import Any, Mapping
+from typing import TYPE_CHECKING, Any, Mapping
+
+if TYPE_CHECKING:  # pragma: no cover - import cycle guard (config imports nothing from here)
+    from .config import Knobs
 
 # --- named constants (no bare literals below) ---------------------------
 
@@ -90,22 +103,101 @@ class EventKind(str, Enum):
     INIT_RUN = "init_run"
 
 
-def default_eventlog_path(root: Path, eventlog_path: str) -> Path:
+#: Filename stem + glob for per-writer chains. `events-<writer_id>.jsonl`
+#: sits beside the shared `events.jsonl`; `eventlog_paths` folds both.
+PER_WRITER_PREFIX = "events-"
+EVENTS_GLOB = "events*.jsonl"
+
+#: Characters a writer id may carry -- it becomes part of a filename on
+#: every platform, so anything else in a hostname is folded to `-`.
+_WRITER_ID_SAFE = re.compile(r"[^a-z0-9-]+")
+
+#: How many hex chars of the root-path digest a writer id carries. Six is
+#: plenty to tell two clones on one machine apart; the hostname does the
+#: rest.
+WRITER_ROOT_DIGEST_CHARS = 6
+
+
+def writer_id(root: Path) -> str:
+    """The identity of THIS clone as an event-log writer:
+    `<hostname>-<6 hex of sha256(resolved root path)>`, e.g.
+    `cs-laptop-3f2a1b`. Two clones of one corpus on one machine get
+    different ids (the path differs); the same clone always gets the same
+    id (deterministic, no state file). Hostname is lowercased and folded
+    to `[a-z0-9-]` so the id is filename-safe everywhere.
+    """
+    host = _WRITER_ID_SAFE.sub("-", (socket.gethostname() or "host").lower()).strip("-") or "host"
+    try:
+        resolved = str(Path(root).resolve())
+    except OSError:
+        resolved = str(root)
+    digest = hashlib.sha256(resolved.lower().encode("utf-8")).hexdigest()
+    return f"{host}-{digest[:WRITER_ROOT_DIGEST_CHARS]}"
+
+
+def default_eventlog_path(root: Path, eventlog_path: str, *, per_writer: bool = False) -> Path:
     """Resolve the actual log FILE path from a corpus root and a
     `Knobs.eventlog_path` value.
 
     `Knobs.eventlog_path` (default `"var/log/"`) names a DIRECTORY, relative
-    to the corpus root -- not the log file itself. The event log always
-    lives at a fixed filename inside that directory:
+    to the corpus root -- not the log file itself. The event log lives at a
+    fixed filename inside that directory:
 
-        <root>/<eventlog_path>/events.jsonl
+        <root>/<eventlog_path>/events.jsonl                      (shared)
+        <root>/<eventlog_path>/events-<writer_id>.jsonl          (per_writer)
 
-    e.g. with the default knob, `<root>/var/log/events.jsonl`. Dependents
-    (m2, m3, m6, m8) should route through this helper rather than
-    hardcoding the join, so the directory-vs-file convention only lives in
-    one place.
+    Dependents should route through this helper (or `eventlog_for`, which
+    reads the knob) rather than hardcoding the join, so the directory-vs-
+    file convention only lives in one place.
     """
-    return Path(root) / eventlog_path / EVENTS_FILENAME
+    directory = Path(root) / eventlog_path
+    if per_writer:
+        return directory / f"{PER_WRITER_PREFIX}{writer_id(root)}.jsonl"
+    return directory / EVENTS_FILENAME
+
+
+def eventlog_paths(root: Path, eventlog_path: str) -> list[Path]:
+    """Every chain file in the log directory, the shared `events.jsonl`
+    first (if present) then per-writer files in name order. Readers that
+    want the whole record (doctor's chain check, stats' fold) iterate this;
+    a writer only ever touches the one path `default_eventlog_path` names.
+    """
+    directory = Path(root) / eventlog_path
+    if not directory.is_dir():
+        return []
+    shared = directory / EVENTS_FILENAME
+    out = [shared] if shared.is_file() else []
+    out += sorted(p for p in directory.glob(EVENTS_GLOB) if p.name != EVENTS_FILENAME and p.is_file())
+    return out
+
+
+def eventlog_for(root: Path, knobs: "Knobs") -> "EventLog":
+    """The `EventLog` THIS process should append to under `knobs` -- the
+    one seam every writer (packer, doctor, sessions, intake, hooks) routes
+    through, so the per-writer decision lives in exactly one place.
+    """
+    return EventLog(
+        default_eventlog_path(root, knobs.eventlog_path, per_writer=knobs.eventlog_per_writer)
+    )
+
+
+def read_events(paths: list[Path]) -> list[dict]:
+    """Best-effort read of every record across `paths`, merged and sorted
+    by `ts` (stable, so records inside one chain keep their order).
+    Malformed lines are skipped, never raised -- chain integrity is
+    `EventLog.verify`'s job; this is the read side every fold shares.
+    """
+    out: list[dict] = []
+    for path in paths:
+        for line in _read_raw_lines(path):
+            try:
+                record = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(record, dict):
+                out.append(record)
+    out.sort(key=lambda r: str(r.get("ts", "")))
+    return out
 
 
 # --- cross-platform advisory file lock -----------------------------------

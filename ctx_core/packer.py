@@ -24,7 +24,7 @@ from pathlib import Path
 from typing import Sequence
 
 from .config import Knobs
-from .events import EventKind, EventLog, default_eventlog_path
+from .events import EventKind, EventLog, eventlog_for
 from .indexing import Entry, build_index, _terms
 from .intake import intake_list
 from .layout import Layout
@@ -102,7 +102,9 @@ REDUNDANCY_THRESHOLD = 0.86
 #: Hard cap on how many ranked candidates are even considered for budgeting,
 #: independent of the token budget itself. Tuned default — deliberately
 #: small: it is the binding constraint that keeps a pack from ballooning to
-#: fill a large budget once the budget itself stops being the limit.
+#: fill a large budget once the budget itself stops being the limit. Since
+#: 0.2.4 the live value comes from `Knobs.retrieval_k` (same default); this
+#: constant is the documented engine default.
 RETRIEVAL_K = 12
 
 #: `--summary` scales the working budget down to this fraction of
@@ -405,7 +407,7 @@ def pack(
     if decisions is False:
         decisions = bool(knobs.retrieval_decisions_default)
 
-    entries, census = build_index(layout)
+    entries, census = build_index(layout, exclude_prefixes=tuple(knobs.index_exclude))
 
     if budget is not None:
         # Explicit override -- literal, never scaled by SUMMARY_BUDGET_FRAC
@@ -466,7 +468,16 @@ def pack(
     # admission route (pinned, or already `always_include` from
     # named/decisions/last above) is left to that route rather than
     # reconsidered here.
-    intake_queue = {item.path for item in intake_list(layout)}
+    # `intake_always_include_max_items` (0.2.4): with a cap, only the newest
+    # N queue items (by `ctx:received`, the order `intake_list` sorts on) are
+    # pinned; older ones fall back into ordinary ranking with no drop line,
+    # so a grown backlog cannot fill every manifest with zero-relevance
+    # notes. `None` keeps the pre-0.2.4 pin-everything behavior.
+    queue_items = intake_list(layout)
+    max_items = knobs.intake_always_include_max_items
+    if max_items is not None:
+        queue_items = queue_items[max(0, len(queue_items) - int(max_items)):]
+    intake_queue = {item.path for item in queue_items}
     intake_cap = int(knobs.intake_always_include_max_tokens)
     intake_dropped: list[tuple[Entry, str]] = []
     for e in entries:
@@ -539,7 +550,8 @@ def pack(
     top_rel = max((e.relevance for e in pool), default=0.0)
     rel_cutoff = FRESH_BULK_MAX_RELEVANCE_FRAC * top_rel
 
-    ranked = sorted(pool, key=lambda e: score(e, rel_cutoff), reverse=True)[:RETRIEVAL_K]
+    retrieval_k = int(knobs.retrieval_k) if knobs.retrieval_k else RETRIEVAL_K
+    ranked = sorted(pool, key=lambda e: score(e, rel_cutoff), reverse=True)[:retrieval_k]
 
     chosen: list[Entry] = list(pinned)
     dropped: list[tuple[Entry, str]] = [
@@ -609,7 +621,7 @@ def pack(
         top_oversized=top_oversized,
     )
 
-    log = event_log if event_log is not None else EventLog(default_eventlog_path(layout.root, knobs.eventlog_path))
+    log = event_log if event_log is not None else eventlog_for(layout.root, knobs)
     log.append(
         EventKind.CONTEXT_ASSEMBLED,
         {

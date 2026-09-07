@@ -63,6 +63,11 @@ def _render_board(entries: list) -> str:
     lines = ["ctx sessions:"]
     for e in entries:
         status = "just-expired" if e.stale else "live"
+        # 0.2.4: a session another machine wrote (rode in via git) is shown
+        # as such -- it is never swept here; an older engine has no `host`.
+        host = getattr(e, "host", "") or ""
+        if getattr(e, "foreign", False):
+            status += f" on {host}"
         claims = ", ".join(e.claims) if e.claims else "(none)"
         lines.append(
             f"  - {e.session_id} [{status}] age={e.age_seconds:.0f}s "

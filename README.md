@@ -96,7 +96,7 @@ ctx archive sweep
 ctx archive stub <path>
 ctx init [--answers FILE]
 ctx domains list | register <name> <path> | forget <name>
-ctx sessions list | claim <session-id> <path>... [--intent TEXT] | release <session-id> | heartbeat <session-id>
+ctx sessions list | start <session-id> [--intent TEXT] | claim <session-id> <path>... [--intent TEXT] | release <session-id> | heartbeat <session-id>
 ctx intake add "<text>" [--source user|project|research] [--title T]
 ctx intake route <item> --to core|notes[/<subpath>]|archive
 ctx intake list
@@ -136,6 +136,36 @@ it never applies anything on its own.
   session activity, and ctx-yield dead weight when it's installed. No LLM call
   anywhere in gathering or aggregation; the `ctx-analyze` skill is the one place
   that spends tokens, and it reads only these products, never the raw event log.
+
+## Several machines, several agents
+
+A corpus that commits `var/` and is worked on from more than one clone or
+machine needs two things the single-clone design does not:
+
+- **Per-writer event logs** -- `eventlog_per_writer = true` in `.ctxrc.toml`.
+  A hash chain has exactly one tail, so two clones appending to one
+  `events.jsonl` cannot both survive a git merge (one side always loses).
+  With the knob on, each clone appends to its own `events-<host>-<6hex>.jsonl`
+  and a merge is a plain union of files; `ctx doctor` verifies every chain and
+  `ctx stats` folds them all. An older shared `events.jsonl` stays in place as
+  a frozen, still-verified chain.
+- **Host-aware sessions** -- a live session file records the machine that
+  wrote it. Another machine's file is listed as *foreign*, never swept
+  locally (its own host sweeps it), and blocks a write only while its own
+  heartbeat is fresh.
+
+**Other agents.** Nothing in the corpus is specific to one AI tool: the
+files are Markdown, the engine is a CLI, and the Claude Code hooks are one
+optional way to drive it. A tool with no hook system follows the same
+contract by hand -- the template ships `AGENTS.md` (the tool-neutral
+bootstrap, which `CLAUDE.md` imports) and `docs/OTHER-AGENTS.md` spells out
+the calls: `ctx sessions start <id> --intent "..."` at the start,
+`ctx pack "<task>"` for a working set, `ctx sessions heartbeat <id>` during
+long work, and `ctx doctor` + `ctx sessions release <id>` at the end. Two
+`ctx doctor` advisories back this up: **hook silence** (sessions keep ending
+with doctor runs but no tool-hook event ever lands -- the hooks are wired but
+not firing) and **map coverage** (every `notes/` file named in `core/map.md`,
+every path pointer in the map resolving).
 
 ## Package name vs. command name
 
@@ -214,6 +244,14 @@ stdio, and `ctx pack --budget N` (a literal per-invocation override) — 381 tes
 passing locally, both suite tiers. PyPI publication and the plugin-marketplace
 listing (see `docs/ADOPTION.md` for the checklist) are still the next iteration
 targets.
+
+Version 0.2.4 makes a corpus safe to share across machines and agents:
+per-writer event logs (`eventlog_per_writer`), host-aware session files
+(foreign sessions are never swept locally; a Windows unlink race no longer
+aborts a sweep), `ctx sessions start` for hookless agents, index/ranking
+knobs (`index_exclude`, `retrieval_k`, `intake_always_include_max_items`),
+and two new `ctx doctor` advisories (hook silence, map coverage). Ships
+`AGENTS.md` in the template and `docs/OTHER-AGENTS.md`.
 
 ## License
 

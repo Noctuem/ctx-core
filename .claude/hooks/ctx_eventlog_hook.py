@@ -192,8 +192,17 @@ def main() -> int:
 
     try:
         knobs = Knobs.load(root)
-        log_path = default_eventlog_path(root, knobs.eventlog_path)
-        log = EventLog(log_path)
+        # 0.2.4: `eventlog_for` honors `eventlog_per_writer` (this clone's
+        # own chain file); the fallback keeps this hook working unmodified
+        # against an older installed engine.
+        try:
+            from ctx_core.events import eventlog_for
+
+            log = eventlog_for(root, knobs)
+            log_path = log.path
+        except ImportError:
+            log_path = default_eventlog_path(root, knobs.eventlog_path)
+            log = EventLog(log_path)
         # Captured BEFORE this call's own append below, so it names the
         # PREVIOUS event -- see `_previous_hook_ts`'s docstring.
         previous_ts = (

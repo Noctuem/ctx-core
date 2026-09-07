@@ -150,3 +150,12 @@ importable there, each hook still runs (and still exits `0`, except the
 guard's deny path which only ever fires on a real conflict it *could*
 resolve); it just has nothing to register/check/append with, and says so
 in `var/log/ctx-hook-errors.log`.
+
+## Interpreter note (Windows)
+
+The shipped `settings.json` invokes each hook as `python "<script>"`. On a
+Windows machine whose *machine* PATH lists `WindowsApps` ahead of a real
+Python, `python` resolves to the Microsoft Store stub and every hook exits
+9009 without a trace -- fail-open becomes fail-silent. Either remove the
+stub aliases or change the four commands to `py -3 "<script>"`; `ctx
+doctor`'s hook-silence advisory (0.2.4) is how you find out it happened.

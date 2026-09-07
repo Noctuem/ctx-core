@@ -53,7 +53,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from ctx_core.config import Knobs
-from ctx_core.events import EventKind, EventLog, default_eventlog_path
+from ctx_core.events import EventKind, EventLog, eventlog_for
 from ctx_core.layout import PROFILE_PLACEHOLDER, Layout
 
 # --- answer schema: (key, section heading, interactive prompt text) ---
@@ -105,7 +105,7 @@ def run_interview(
     the test suite and any scripted/CI scaffolding drive.
 
     `event_log`, if given, is used in place of the default
-    `EventLog(default_eventlog_path(layout.root, knobs.eventlog_path))` for
+    `eventlog_for(layout.root, knobs)` for
     the `INIT_RUN` event this write appends (see module docstring).
     """
     if answers is not None:
@@ -171,8 +171,7 @@ def _default_event_log(layout: Layout) -> EventLog:
     # fresh `Knobs.load` (one cheap `.ctxrc.toml` read) so a domain that
     # customized `eventlog_path` still gets `INIT_RUN` in the right place,
     # without this module owning a `knobs` parameter of its own.
-    knobs = Knobs.load(layout.root)
-    return EventLog(default_eventlog_path(layout.root, knobs.eventlog_path))
+    return eventlog_for(layout.root, Knobs.load(layout.root))
 
 
 def _emit_init_run(
