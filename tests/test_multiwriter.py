@@ -344,3 +344,21 @@ def test_sessions_start_registers_then_heartbeats(tmp_path: Path, capsys: pytest
     listing = capsys.readouterr().out
     assert "agent-1" in listing and f"host={local_host()}" in listing
     assert cli.main(["sessions", "release", "agent-1", "--root", str(tmp_path)]) == 0
+
+
+def test_chain_survives_a_crlf_checkout(tmp_path: Path) -> None:
+    log = EventLog(tmp_path / "events.jsonl")
+    log.append("x", {"i": 0})
+    log.append("x", {"i": 1})
+    log.path.write_bytes(log.path.read_bytes().replace(b"\n", b"\r\n"))
+    assert log.verify() == (True, None)
+    log.append("x", {"i": 2})  # chains from the CR-stripped tail
+    assert log.verify() == (True, None)
+
+
+def test_map_directory_line_covers_files_beneath_it(tmp_path: Path) -> None:
+    layout = _corpus(tmp_path)
+    _write(layout.notes / "toolbox" / "agents" / "web" / "ui.md", "# UI agent\nbrowser tester.\n")
+    _write(layout.core / "map.md", "# Map\n- alpha.md\n- beta.md\n- [toolbox/agents/] agent templates, own INDEX inside\n")
+    report = doctor(layout, Knobs(hook_silence_min_doctor_runs=None))
+    assert not any(w.startswith("map coverage") for w in report.warnings), report.warnings

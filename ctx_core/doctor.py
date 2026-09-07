@@ -516,13 +516,27 @@ def _check_map_coverage(layout: Layout, entries: list[Entry], knobs: Knobs) -> l
         return []
 
     intake_prefix = f"notes/{INTAKE_DIRNAME}/"
+
+    def _covered(path: str) -> bool:
+        # Named outright (full path or basename), or under a directory the map
+        # names with a trailing slash (`toolbox/agents/` covers everything
+        # beneath it -- a directory line is a legitimate map entry).
+        if path in text or path.rsplit("/", 1)[-1] in text:
+            return True
+        parts = path.split("/")
+        for depth in range(1, len(parts)):
+            directory = "/".join(parts[:depth]) + "/"
+            for form in (directory, directory.removeprefix("notes/")):
+                # A directory ENTRY, not a substring of some file path: the
+                # map names it as `[dir/]` or `` `dir/` ``.
+                if f"[{form}]" in text or f"`{form}`" in text:
+                    return True
+        return False
+
     uncovered = sorted(
         e.path
         for e in entries
-        if e.path.startswith("notes/")
-        and not e.path.startswith(intake_prefix)
-        and e.path not in text
-        and e.path.rsplit("/", 1)[-1] not in text
+        if e.path.startswith("notes/") and not e.path.startswith(intake_prefix) and not _covered(e.path)
     )
     dangling = sorted(
         {

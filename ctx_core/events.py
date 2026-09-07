@@ -311,7 +311,11 @@ def _read_raw_lines(path: Path) -> list[str]:
     lines = text.split("\n")
     if lines and lines[-1] == "":
         lines.pop()
-    return lines
+    # A chain file that rode git through a CRLF checkout (Windows
+    # `core.autocrlf=true`) carries a trailing `\r` on every line. The hash
+    # covers the canonical line, so the CR is checkout noise, not content:
+    # strip it on read rather than fail every verify on one platform.
+    return [line[:-1] if line.endswith("\r") else line for line in lines]
 
 
 # --- the log ---------------------------------------------------------------
