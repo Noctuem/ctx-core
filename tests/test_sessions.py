@@ -124,8 +124,11 @@ def test_register_writes_live_file_and_event(tmp_path: Path) -> None:
     assert data["claims"] == []
     assert data["pid"] == os.getpid()
     assert data["started_at"] == data["heartbeat_at"]
+    assert data["hookless"] is False
 
     assert _kinds(log) == [SESSION_START]
+    event = json.loads(log.path.read_text(encoding="utf-8").splitlines()[0])
+    assert event["payload"]["hookless"] is False
 
 
 def test_heartbeat_updates_timestamp_no_event(tmp_path: Path) -> None:

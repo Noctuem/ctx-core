@@ -2,7 +2,7 @@
 
 ## High
 
-- [ ] [human] Publish `ctx-core` 0.2.3 to PyPI (maintainer action — no PyPI token in the session env; README quick-start
+- [ ] [human] Publish `ctx-core` 0.2.5 to PyPI (maintainer action — no PyPI token in the session env; README quick-start
   upgrades to `pip install ctx-core` after) [2026-08-18]
 
 ## Medium
@@ -51,6 +51,21 @@
 ## Fleeting Ideas
 
 ## Done
+- [x] `ctx doctor` hook-silence advisory lets one historical
+  `hook_post_tool_use` event mask later silent runs, and manual hookless
+  sessions have no explicit event marker; bound the check to the recent
+  threshold-sized doctor window and mark hookless session records generically.
+  **FIXED 2026-09-08 (0.2.5): the knob now bounds consecutive
+  hook-expected doctor runs since the last hook event; `session_start`
+  accepts `hookless: true`, with absent/false preserving the old
+  hook-expected meaning.**
+  [Codex integration audit 2026-09-08]
+- [x] `ctx stats` counts routed/archive stubs still present under
+  `notes/intake/` as unrouted even though the canonical `ctx intake list`
+  queue admits only `ctx:layer: new`; make the stats fold use that queue.
+  **FIXED 2026-09-08 (0.2.5): `_fold_intake` now consumes `intake_list`;
+  output schema unchanged.**
+  [Codex integration audit 2026-09-08]
 - [x] Live composition check with a real installed `ctx-yield` (stub-tested
   only so far) [2026-08-18] — **FIXED 2026-08-21: `ctx-yield` 0.1.0 was
   already installed and on PATH (`pip show ctx-yield`) — ran `ctx stats

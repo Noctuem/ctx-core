@@ -100,11 +100,12 @@ class Knobs:
     survive a merge. Readers fold every `events*.jsonl` either way."""
 
     hook_silence_min_doctor_runs: int | None = 3
-    """`ctx doctor` soft check: warn when THIS writer's chain holds at
-    least this many `doctor_run` events but not one `hook_post_tool_use`
-    event -- the signature of tool hooks that are wired but never fire
-    (wrong interpreter on PATH, a settings file that lost its hook block).
-    `None` disables the check for a corpus that runs without hooks."""
+    """`ctx doctor` soft check: warn when THIS writer's chain has this
+    many consecutive hook-expected `doctor_run` events after the last
+    `hook_post_tool_use` event -- the signature of tool hooks that are
+    wired but never fire. Runs made while all known live sessions
+    explicitly record `hookless: true` do not count. `None` disables the
+    check."""
 
     doctor_map_check: bool = True
     """`ctx doctor` soft check: every `notes/` file (the New layer,

@@ -295,3 +295,16 @@ full-corpus migration; findings filed: budget-unit denomination (TODO Low, this
 session), 0s-stale warning reproduced in the new hub (existing item
 strengthened). Open: hub checklist Step 7 fresh-session smoke + Step 8.2
 sign-off; then spec → implemented. OQ1 closed by the hub ledger.
+
+## Session 13 — 2026-09-08 — integration-audit fixes, v0.2.5
+
+Two integration-audit findings were fixed without changing the stats output
+schema. Hook-silence diagnosis now counts consecutive hook-expected doctor
+runs since the most recent `hook_post_tool_use`; an old hook can no longer
+hide later silence, and its remedy is tool-neutral. The generic session record
+accepts `hookless: true`, which the manual `sessions start` and implicit CLI claim-registration paths emit;
+missing/false remains hook-expected for compatibility, and mixed sessions stay
+diagnosable. Intake stats now consume `intake_list`, so only New-layer items
+count as unrouted while routed and archive stubs are excluded. Version bumped
+to 0.2.5; focused regressions passed 9 tests and the full suite passed 403.
+Commit held locally for public-repository privacy review; no push.

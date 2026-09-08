@@ -2,6 +2,13 @@
 
 - **Spec:** maintained privately; v0.1.0 implements it in full (all ten
   modules).
+- **Latest (2026-09-08, Session 13):** v0.2.5 fixes two integration-audit
+  regressions. Hook silence now counts consecutive hook-expected doctor runs
+  since the last hook event, manual CLI sessions carry a generic
+  `hookless: true` marker, and mixed/legacy sessions remain hook-expected.
+  Intake stats now reuse the canonical New-layer queue, so routed and archive
+  stubs are excluded while the JSON/Markdown schema stays unchanged. Full
+  suite: 403 passed. Not pushed; publication remains a maintainer action.
 - **Where we are:** v0.2.0 built 2026-08-18 (sessions board, intake layers,
   stats pipeline; 324 tests); v0.1.0+v0.2.0 PUBLISHED 2026-08-18,
   remote history clean, CI matrix green. First live dogfood 2026-08-19/20
@@ -58,9 +65,9 @@
   filed (budget knobs denominated in estimator units), and Session 10's
   0s-stale doctor warning reproduced in the new hub day one (strengthens that
   item). OQ1 RESOLVED by hub ruling: per-repo boards, no cross-repo bridge.
-- **Next:** [human] PyPI publish 0.2.3 + marketplace listing (the new hub runs
-  on the local editable install until then). Engineering backlog: the two Low
-  ergonomics items. New work arrives via dogfood (now including the hub
+- **Next:** [human] PyPI publish 0.2.5 + marketplace listing (existing local
+  users run on the local editable install until then). Engineering backlog:
+  the pack-relevance Medium item and two Low ergonomics items. New work arrives via dogfood (now including the hub
   itself) or ctx-build (ship gate: two real-target builds — the SIA-v4 build
   arguably qualifies as one; noctuem's call).
 - **Guard (PUBLIC repo):** never commit the repo owner's personal name or

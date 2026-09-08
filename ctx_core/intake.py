@@ -387,11 +387,12 @@ def intake_list(layout: Layout, *, now: datetime | None = None) -> list[IntakeIt
 
         source = meta.get(SOURCE_KEY, DEFAULT_SOURCE)
         received_str = meta.get(RECEIVED_KEY)
-        received = (
-            _parse_ts(received_str)
-            if received_str
-            else datetime.fromtimestamp(p.stat().st_mtime, tz=timezone.utc)
-        )
+        try:
+            received = _parse_ts(received_str) if received_str else None
+        except ValueError:
+            received = None
+        if received is None:
+            received = datetime.fromtimestamp(p.stat().st_mtime, tz=timezone.utc)
         age_days = (ref_now - received).total_seconds() / SECONDS_PER_DAY
         title = meta.get(TITLE_KEY) or _title_from_body(body, p.stem)
 

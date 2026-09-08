@@ -81,6 +81,11 @@ SESSION_CLAIM = "session_claim"
 SESSION_RELEASE = "session_release"
 SESSION_EXPIRE = "session_expire"
 
+#: Generic session-record field used by harnesses with no tool-hook
+#: mechanism. Missing/false means hooks are expected, preserving the
+#: interpretation of every pre-0.2.5 session record.
+HOOKLESS_FIELD = "hookless"
+
 #: Session ids are used verbatim as filenames (`<session_id>.json`) -- keep
 #: them to a safe, portable charset so a caller cannot (accidentally or
 #: otherwise) escape `live/`/`history/` via `/`, `\`, or `..`.
@@ -411,10 +416,14 @@ class SessionBoard:
 
     # --- public interface ----------------------------------------------
 
-    def register(self, session_id: str, intent: str) -> None:
+    def register(self, session_id: str, intent: str, *, hookless: bool = False) -> None:
         """Create `session_id`'s live file (overwriting any prior file of
         the same id -- registering is idempotent-by-intent, not append).
         Sweeps other stale sessions first, then appends `SESSION_START`.
+        `hookless=True` explicitly marks a manual/non-hook harness so
+        doctor's hook-silence advisory does not treat its ritual runs as
+        evidence of a broken hook installation. The default stays false
+        for existing hook adapters and third-party callers.
         """
         _validate_session_id(session_id)
         self._sweep_stale(exclude=session_id)
@@ -427,11 +436,18 @@ class SessionBoard:
             "claims": [],
             "pid": os.getpid(),
             HOST_FIELD: self.host,
+            HOOKLESS_FIELD: bool(hookless),
         }
         _atomic_write_json(self._live_path(session_id), data)
         self._event_log.append(
             SESSION_START,
-            {"session_id": session_id, "intent": intent, "pid": data["pid"], HOST_FIELD: self.host},
+            {
+                "session_id": session_id,
+                "intent": intent,
+                "pid": data["pid"],
+                HOST_FIELD: self.host,
+                HOOKLESS_FIELD: bool(hookless),
+            },
         )
 
     def heartbeat(self, session_id: str) -> None:

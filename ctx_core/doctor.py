@@ -66,6 +66,12 @@ from .events import (
 from .indexing import FRONT_MATTER, Entry, build_index
 from .intake import INTAKE_DIRNAME, intake_list
 from .layout import Layout
+from .sessions import (
+    HOOKLESS_FIELD,
+    SESSION_EXPIRE,
+    SESSION_RELEASE,
+    SESSION_START,
+)
 
 # ==========================================================================
 # Constants
@@ -468,27 +474,50 @@ def _check_hook_silence(own_log: EventLog, knobs: Knobs) -> list[str]:
     """Advisory only. Hooks are fail-open by design, which makes a hook
     that never runs at all (wrong `python` on PATH, a settings file that
     lost its hook block) invisible -- nothing errors, nothing logs. The
-    signature is unmistakable in THIS writer's own chain: sessions keep
-    ending with `ctx doctor` (the ritual) while not one tool-hook event
-    ever landed. `knobs.hook_silence_min_doctor_runs` sets how many ritual
-    runs of silence it takes; `None` disables the check for a corpus that
-    runs without hooks on purpose.
+    signature is unmistakable in THIS writer's own recent chain: sessions
+    keep reaching `ctx doctor` (the ritual) while no tool-hook event lands.
+    `knobs.hook_silence_min_doctor_runs` sets the number of consecutive
+    hook-expected doctor runs allowed after the last hook event. The first
+    doctor after a hook closes a healthy interval; later doctors establish
+    silence. Doctor runs made while every known live session is explicitly
+    `hookless: true` do not count. Missing fields on older session records
+    still mean hooks are expected. `None` disables the check.
     """
     threshold = knobs.hook_silence_min_doctor_runs
     if threshold is None:
         return []
     events = read_events([own_log.path])
-    n_doctor = sum(1 for e in events if e.get("kind") == EventKind.DOCTOR_RUN.value)
-    if n_doctor < int(threshold):
-        return []
-    if any(e.get("kind") == HOOK_POST_TOOL_USE_KIND for e in events):
+    active_sessions: dict[str, bool] = {}
+    consecutive_hook_expected_doctors = 0
+    for event in events:
+        kind = event.get("kind")
+        payload = event.get("payload")
+        payload = payload if isinstance(payload, dict) else {}
+        session_id = payload.get("session_id")
+        if kind == SESSION_START and isinstance(session_id, str) and session_id:
+            active_sessions[session_id] = payload.get(HOOKLESS_FIELD) is True
+        elif kind in {SESSION_RELEASE, SESSION_EXPIRE} and isinstance(session_id, str):
+            active_sessions.pop(session_id, None)
+        elif kind == HOOK_POST_TOOL_USE_KIND:
+            consecutive_hook_expected_doctors = 0
+        elif kind == EventKind.DOCTOR_RUN.value:
+            explicitly_hookless = bool(active_sessions) and all(active_sessions.values())
+            if not explicitly_hookless:
+                consecutive_hook_expected_doctors += 1
+
+    threshold_runs = int(threshold)
+    currently_hookless = bool(active_sessions) and all(active_sessions.values())
+    if currently_hookless or consecutive_hook_expected_doctors < threshold_runs:
         return []
     return [
-        f"hook silence: {n_doctor} doctor runs in this writer's chain ({own_log.path.name}) "
-        f"and not one {HOOK_POST_TOOL_USE_KIND} event -- the tool hooks are not firing here. "
-        "Check that the interpreter the hooks name resolves (`python` vs `py -3`) and that "
-        "the settings file still wires .claude/hooks/; set hook_silence_min_doctor_runs = "
-        "false in .ctxrc.toml to silence this on a hookless corpus"
+        f"hook silence: {consecutive_hook_expected_doctors} consecutive hook-expected "
+        f"doctor runs in this writer's chain ({own_log.path.name}) since the last "
+        f"{HOOK_POST_TOOL_USE_KIND} event "
+        "-- the tool hooks are not firing here. "
+        "Check that this harness's native hooks are configured and their interpreter "
+        "resolves. For a manual session, use `ctx sessions start` (or `claim`) so its "
+        f"{SESSION_START} record carries `{HOOKLESS_FIELD}: true`; set "
+        "hook_silence_min_doctor_runs = false only when this corpus never expects hooks"
     ]
 
 

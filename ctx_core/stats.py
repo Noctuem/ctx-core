@@ -16,10 +16,8 @@ names its own scope (the window, whether it covers the whole corpus, and
 whether ctx-yield actually ran) rather than being read as unscoped truth.
 
 `sessions.py` (m11) and `intake.py` (m12) are sibling modules built in the
-same wave as this one and may not exist yet in a given checkout — this
-module never imports them. It reads their ON-DISK CONTRACT directly (the
-`var/sessions/live|history/*.json` file shape and `notes/intake/*.md` front
-matter, both specified in the build spec's Module 11/12 sections) and folds
+same wave as this one. This module reads the sessions ON-DISK CONTRACT
+directly and reuses `intake_list` for the canonical unrouted queue, then folds
 `SESSION_*`/`INTAKE_*` event kinds by the plain string names their spec
 sections name (this codebase's `EventKind` already documents that any
 non-empty string is a valid `kind` — the enum is a minimum vocabulary, not a
@@ -41,6 +39,7 @@ from typing import Any
 from .config import Knobs
 from .events import EventKind, EventLog, eventlog_paths, read_events
 from .indexing import FRONT_MATTER, Entry, build_index
+from .intake import INTAKE_DIRNAME, RECEIVED_KEY, intake_list
 from .layout import Layout
 from .yield_bridge import NOT_INSTALLED_HINT, YIELD_SCAN_KIND, dead_weight_map, yield_scan
 
@@ -110,22 +109,13 @@ SESSIONS_SUBDIR = "sessions"
 SESSIONS_LIVE_DIRNAME = "live"
 SESSIONS_HISTORY_DIRNAME = "history"
 
-#: `notes/intake/` directory name, per the m12 build spec's on-disk
-#: contract. An item is "unrouted" for this module's purposes as long as
-#: its note is still physically present here — `intake route` (m12) moves
-#: the note out (git-visible rename) as part of routing, so presence is a
-#: direct, unambiguous ground-truth signal that does not depend on any
-#: front-matter field being parsed correctly.
-INTAKE_SUBDIR = "intake"
+#: `notes/intake/` directory name from the canonical intake module.
+INTAKE_SUBDIR = INTAKE_DIRNAME
 
-#: Front-matter keys this module reads from an intake note, per the m12
-#: build spec's documented front matter (`ctx:layer`, `ctx:source`,
-#: `ctx:received`).
-INTAKE_SOURCE_KEY = "ctx:source"
-INTAKE_RECEIVED_KEY = "ctx:received"
-#: Default source when a note's front matter omits `ctx:source` — mirrors
-#: `intake_add`'s own documented default (`source="user"`).
-INTAKE_DEFAULT_SOURCE = "user"
+#: Front-matter key stats re-reads only to preserve the existing
+#: `unrouted_no_timestamp` output field. Queue membership and source come
+#: from `intake_list`.
+INTAKE_RECEIVED_KEY = RECEIVED_KEY
 
 #: Payload key an `INTAKE_ROUTE` event carries for its "age at routing"
 #: figure. The build spec's m12 section said the event "carries source,
@@ -602,17 +592,16 @@ def _fold_intake(layout: Layout, windowed: list[dict], effective_now: float) -> 
     dir_present = intake_dir.is_dir()
     unrouted_by_source: dict[str, int] = {}
     no_timestamp = 0
-    if dir_present:
-        for p in sorted(intake_dir.glob("*.md")):
-            try:
-                raw = p.read_text(encoding="utf-8", errors="replace")
-            except OSError:
-                continue
-            meta = _read_front_matter(raw)
-            source = meta.get(INTAKE_SOURCE_KEY) or INTAKE_DEFAULT_SOURCE
-            unrouted_by_source[source] = unrouted_by_source.get(source, 0) + 1
-            if _parse_iso(meta.get(INTAKE_RECEIVED_KEY, "")) is None:
-                no_timestamp += 1
+    ref_now = datetime.fromtimestamp(effective_now, tz=timezone.utc)
+    for item in intake_list(layout, now=ref_now):
+        unrouted_by_source[item.source] = unrouted_by_source.get(item.source, 0) + 1
+        try:
+            raw = (layout.root / item.path).read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        meta = _read_front_matter(raw)
+        if _parse_iso(meta.get(INTAKE_RECEIVED_KEY, "")) is None:
+            no_timestamp += 1
 
     route_events = [e for e in windowed if e.get("kind") == INTAKE_ROUTE_KIND]
     latencies: list[float] = []

@@ -545,6 +545,31 @@ def test_intake_unrouted_backlog_by_source(no_ctx_yield_on_path: None, tmp_path:
     assert report.intake["unrouted_no_timestamp"] == 1
 
 
+def test_intake_unrouted_uses_canonical_new_layer_queue(
+    no_ctx_yield_on_path: None, tmp_path: Path
+) -> None:
+    layout = Layout(tmp_path)
+    intake_dir = layout.notes / "intake"
+    _write(
+        intake_dir / "new.md",
+        "---\nctx:layer: new\nctx:source: user\nctx:received: 2026-08-18T00:00:00+00:00\n---\n",
+    )
+    _write(
+        intake_dir / "routed.md",
+        "---\nctx:layer: evergreen\nctx:source: research\nctx:received: 2026-08-17T00:00:00+00:00\n---\n",
+    )
+    _write(
+        intake_dir / "archive-stub.md",
+        "---\nsources: [sha256:abc]\nctx:source: project\n---\n",
+    )
+
+    report = compute_stats(layout, Knobs(), now=FIXED_NOW)
+
+    assert report.intake["unrouted_total"] == 1
+    assert report.intake["unrouted_by_source"] == {"user": 1}
+    assert report.intake["unrouted_no_timestamp"] == 0
+
+
 def test_intake_latency_from_route_events(no_ctx_yield_on_path: None, tmp_path: Path) -> None:
     layout = Layout(tmp_path)
     log = EventLog(default_eventlog_path(layout.root, Knobs().eventlog_path))

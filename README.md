@@ -119,6 +119,8 @@ it never applies anything on its own.
   it isn't already) and records what paths it's touching; a stale session (past
   `session_stale_seconds`, crashed or otherwise abandoned) stops blocking on its
   own and its claim is swept to `var/sessions/history/` — nothing is ever deleted.
+  Manual CLI registration records `hookless: true`; hook adapters use the
+  backward-compatible default (`false`) and emit `hook_post_tool_use` events.
   The plugin layer wires this in automatically: a `SessionStart` hook registers and
   shows who else is active, and a `PreToolUse` guard hook blocks a write into
   another live session's claim (fail-open — a broken guard never bricks a session).
@@ -162,10 +164,10 @@ bootstrap, which `CLAUDE.md` imports) and `docs/OTHER-AGENTS.md` spells out
 the calls: `ctx sessions start <id> --intent "..."` at the start,
 `ctx pack "<task>"` for a working set, `ctx sessions heartbeat <id>` during
 long work, and `ctx doctor` + `ctx sessions release <id>` at the end. Two
-`ctx doctor` advisories back this up: **hook silence** (sessions keep ending
-with doctor runs but no tool-hook event ever lands -- the hooks are wired but
-not firing) and **map coverage** (every `notes/` file named in `core/map.md`,
-every path pointer in the map resolving).
+`ctx doctor` advisories back this up: **hook silence** (the configured number
+of consecutive hook-expected doctor runs has elapsed since the last tool-hook
+event, excluding explicitly hookless sessions) and **map coverage** (every
+`notes/` file named in `core/map.md`, every path pointer in the map resolving).
 
 ## Package name vs. command name
 
@@ -252,6 +254,11 @@ aborts a sweep), `ctx sessions start` for hookless agents, index/ranking
 knobs (`index_exclude`, `retrieval_k`, `intake_always_include_max_items`),
 and two new `ctx doctor` advisories (hook silence, map coverage). Ships
 `AGENTS.md` in the template and `docs/OTHER-AGENTS.md`.
+
+Version 0.2.5 diagnoses hook silence from consecutive hook-expected doctor runs
+since the last hook event, records manual CLI sessions as explicitly hookless,
+and makes intake stats use the canonical New-layer queue so routed and archive
+stubs are not counted.
 
 ## License
 

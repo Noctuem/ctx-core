@@ -36,11 +36,12 @@ the heartbeat instead of re-registering. A session that dies without
 `release` is swept to history after `session_stale_seconds` (default 30 min)
 by the next board call on the same host -- never deleted.
 
-Without hooks there is no per-tool-call event, so `ctx doctor`'s hook-silence
-advisory will eventually warn on such a clone. Set
-`hook_silence_min_doctor_runs = false` in `.ctxrc.toml` for a corpus that
-is driven only by hookless tools, or leave it on as a reminder that one of
-the writers has no tool trace.
+`ctx sessions start` and the implicit registration performed by
+`ctx sessions claim` record `hookless: true`, so their doctor runs do not
+count toward the hook-silence advisory. A harness with hooks should register through
+`SessionBoard.register`'s default (`hookless=False`) and emit
+`hook_post_tool_use` after tool calls. Older session records with no `hookless`
+field keep that hook-expected interpretation.
 
 ## 3. Several machines
 

@@ -261,7 +261,7 @@ def _cmd_sessions_start(args: argparse.Namespace) -> int:
         print(f"'{args.session_id}' already live -- heartbeat refreshed.")
     except SessionNotFoundError:
         intent = args.intent or board.last_intent(args.session_id) or ""
-        board.register(args.session_id, intent)
+        board.register(args.session_id, intent, hookless=True)
         print(f"Registered '{args.session_id}' on {board.host} (writer {writer_id(layout.root)}).")
     return EXIT_OK
 
@@ -285,7 +285,7 @@ def _cmd_sessions_claim(args: argparse.Namespace) -> int:
         # recorded intent). Recover it from the newest matching history
         # record before falling back to a blank intent.
         intent = args.intent or board.last_intent(args.session_id) or ""
-        board.register(args.session_id, intent)
+        board.register(args.session_id, intent, hookless=True)
         board.claim(args.session_id, args.paths)
     print(f"'{args.session_id}' claims: {', '.join(args.paths)}")
     return EXIT_OK

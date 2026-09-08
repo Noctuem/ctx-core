@@ -288,6 +288,68 @@ def test_hook_silence_warns_only_after_threshold_and_never_with_hook_events(tmp_
     assert not any("hook silence" in w for w in report.warnings)
 
 
+def test_historical_hook_does_not_mask_recent_hook_silence(tmp_path: Path) -> None:
+    layout = _corpus(tmp_path)
+    knobs = Knobs(hook_silence_min_doctor_runs=3)
+    log = eventlog_for(tmp_path, knobs)
+    log.append(HOOK_POST_TOOL_USE_KIND, {"tool_name": "old-tool"})
+
+    for _ in range(3):
+        report = doctor(layout, knobs)
+        assert not any("hook silence" in w for w in report.warnings), report.warnings
+
+    report = doctor(layout, knobs)
+    assert any("hook silence" in w for w in report.warnings), report.warnings
+
+
+def test_hook_silence_threshold_one_treats_hook_then_doctor_as_healthy(tmp_path: Path) -> None:
+    layout = _corpus(tmp_path)
+    knobs = Knobs(hook_silence_min_doctor_runs=1)
+    eventlog_for(tmp_path, knobs).append(HOOK_POST_TOOL_USE_KIND, {"tool_name": "recent-tool"})
+
+    report = doctor(layout, knobs)
+    assert not any("hook silence" in w for w in report.warnings), report.warnings
+
+    report = doctor(layout, knobs)
+    assert any("hook silence" in w for w in report.warnings), report.warnings
+
+
+def test_hook_silence_excludes_explicitly_hookless_session_runs(tmp_path: Path) -> None:
+    layout = _corpus(tmp_path)
+    knobs = Knobs(hook_silence_min_doctor_runs=3)
+    log = eventlog_for(tmp_path, knobs)
+    log.append("session_start", {"session_id": "manual-agent", "hookless": True})
+
+    for _ in range(5):
+        report = doctor(layout, knobs)
+
+    assert not any("hook silence" in w for w in report.warnings), report.warnings
+
+    log.append("session_release", {"session_id": "manual-agent"})
+    for _ in range(3):
+        doctor(layout, knobs)
+    report = doctor(layout, knobs)
+    assert any("hook silence" in w for w in report.warnings), report.warnings
+
+    log.append("session_start", {"session_id": "later-manual", "hookless": True})
+    report = doctor(layout, knobs)
+    assert not any("hook silence" in w for w in report.warnings), report.warnings
+
+
+def test_hook_silence_mixed_sessions_still_checks_hook_capable_runs(tmp_path: Path) -> None:
+    layout = _corpus(tmp_path)
+    knobs = Knobs(hook_silence_min_doctor_runs=3)
+    log = eventlog_for(tmp_path, knobs)
+    log.append("session_start", {"session_id": "manual-agent", "hookless": True})
+    log.append("session_start", {"session_id": "hook-agent"})  # legacy/default: hooks expected
+
+    for _ in range(3):
+        doctor(layout, knobs)
+
+    report = doctor(layout, knobs)
+    assert any("hook silence" in w for w in report.warnings), report.warnings
+
+
 def test_map_coverage_names_uncovered_files_and_dangling_pointers(tmp_path: Path) -> None:
     layout = _corpus(tmp_path, with_map=True)
     knobs = Knobs(hook_silence_min_doctor_runs=None)
@@ -343,6 +405,16 @@ def test_sessions_start_registers_then_heartbeats(tmp_path: Path, capsys: pytest
     assert cli.main(["sessions", "list", "--root", str(tmp_path)]) == 0
     listing = capsys.readouterr().out
     assert "agent-1" in listing and f"host={local_host()}" in listing
+    live = json.loads(
+        (tmp_path / "var" / "sessions" / "live" / "agent-1.json").read_text(encoding="utf-8")
+    )
+    assert live["hookless"] is True
+    start = next(
+        e
+        for e in read_events(eventlog_paths(tmp_path, Knobs().eventlog_path))
+        if e["kind"] == "session_start"
+    )
+    assert start["payload"]["hookless"] is True
     assert cli.main(["sessions", "release", "agent-1", "--root", str(tmp_path)]) == 0
 
 
