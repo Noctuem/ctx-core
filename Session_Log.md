@@ -308,3 +308,6 @@ diagnosable. Intake stats now consume `intake_list`, so only New-layer items
 count as unrouted while routed and archive stubs are excluded. Version bumped
 to 0.2.5; focused regressions passed 9 tests and the full suite passed 403.
 Commit held locally for public-repository privacy review; no push.
+
+Publication follow-up: privacy review passed; `9a3f4a6` pushed to main.
+The earlier held state above records the worker handoff. No PyPI release.

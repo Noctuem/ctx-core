@@ -8,7 +8,8 @@
   `hookless: true` marker, and mixed/legacy sessions remain hook-expected.
   Intake stats now reuse the canonical New-layer queue, so routed and archive
   stubs are excluded while the JSON/Markdown schema stays unchanged. Full
-  suite: 403 passed. Not pushed; publication remains a maintainer action.
+  suite: 403 passed. Pushed to main as `9a3f4a6` after privacy review;
+  PyPI publication remains a maintainer action.
 - **Where we are:** v0.2.0 built 2026-08-18 (sessions board, intake layers,
   stats pipeline; 324 tests); v0.1.0+v0.2.0 PUBLISHED 2026-08-18,
   remote history clean, CI matrix green. First live dogfood 2026-08-19/20
