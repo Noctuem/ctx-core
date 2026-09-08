@@ -9,6 +9,15 @@
 
 - [ ] [human] Plugin-marketplace + community listing per docs/ADOPTION.md checklist
   (who submits: maintainer's call — outward-facing publication) [2026-08-18]
+- [ ] `ctx pack` misses the one note the task is about when relevance rests on a
+  project-name token, and always-include notes can eat the whole budget. Observed on
+  a private corpus: `ctx pack "<Project> commercialization milestone spec"` spent all
+  45k on pinned intake notes, the corpus TODO (14.5k) and two unrelated specs, then
+  dropped the project's own spec and the two spec-writing standards as over-budget —
+  the three files the task needed; the project spec never ranked at all. Candidate
+  fixes: (a) boost notes whose path/title matches a task token; (b) cap the share of
+  the budget always-include intake + TODO may take, so ranked candidates keep a floor.
+  [SIA hub dogfood 2026-09-07]
 
 ## Low
 
